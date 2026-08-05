@@ -1,0 +1,29 @@
+[models]
+#chat                = "gemma3:1b"
+chat                = "ministral_3b:latest"
+memory              = "nomic-embed-text"
+project_manager     = "gemma3:1b"
+
+# chat_max_tokens     =
+# pm_max_tokens       =
+
+[load_system_prompt]
+chat            = "system"
+# memory          = "memory"
+# project_manager = "project_manager"
+
+# [ollama]
+# url = "http://localhost:11434"
+
+[memory]
+retrieve_entry_limit = 3
+
+[file_reader]
+model_max_tokens    = 128000
+
+[search]
+engine              = "http://localhost:8080/search"
+max_results         = 3
+max_char_per_page   = 3000
+model_max_tokens    = 128000
+

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.$py.class
+
+# Virtual environment
+.venv/
+
+# Environment secrets
+.env
+
+# Runtime & local data
+data/
+prompts/
+logs/
+
+# Build & compilation artifacts
+agent
+*.build/
+*.dist/
+*.onefile-build/
+nuitka-crach-report.xml
+compression_context_check
+
+# Developer notes
+DEVELOPMENT_NOTE.md

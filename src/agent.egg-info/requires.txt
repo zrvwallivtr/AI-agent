@@ -1,0 +1,11 @@
+ollama
+pdfplumber
+requests
+rich
+chromadb
+tiktoken
+beautifulsoup4
+lxml
+openpyxl
+python-docx
+ebooklib
