@@ -27,7 +27,7 @@ CATEGORIES = list(get_args(CATEGORY_TYPES))
 
 
 class Memory:
-    def __init__(self, chat: Chat, project: str = None):
+    def __init__(self, chat: Chat, project: str | None = None):
         self.model              = MODEL
         self.embed_model        = EMBED_MODEL
         self.mem_prompt         = MEM_PROMPT
@@ -163,7 +163,7 @@ class Memory:
         prompt: str,
         source: Literal["explicit", "extracted"],
         manual: bool
-    ) -> list[str]:
+    ) -> tuple[list[str], int, int]:
         """
         Process conversation logs, extracts standalone atomic facts
         via LLM, and preserves them in long-term vector storage.
@@ -181,27 +181,28 @@ class Memory:
 
         try:
             # Extract memory
-            response            = LLM.response_with_new_sys_prompt_and_context(
+            response = LLM.response_with_new_sys_prompt_and_context(
                 model=self.model,
                 system_prompt=system_prompt,
                 context=context,
                 prompt=prompt
             )
-            extracted_output    = response.message.content
+
+            extracted_output, prompt_tokens, output_tokens = response
 
             if not extracted_output or not extracted_output.strip():
-                return []
+                return [], 0, 0
 
             created_ids = self._format_and_append_to_db(extracted_output, source)
 
             if created_ids:
                 print(f"Memory saved to '{self.path}'.")
 
-            return created_ids
+            return created_ids, prompt_tokens, output_tokens
 
         except Exception as e:
             print(f"Background memory synthesis encountered an error: {e}")
-            return []
+            return [], 0, 0
 
     def add_memory_entries(self, prompt: str, messages: list[dict]) -> str:
         """

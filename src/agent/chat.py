@@ -1,8 +1,11 @@
 import json
+import mimetypes
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional, Any
+from datetime import datetime, timezone
 
 from src.config import (
+    DROPBOX_DIR,
     SYS_PROMPT,
     CHAT_DIR,
     DEFAULT_PATH,
@@ -11,7 +14,10 @@ from src.config import (
 from src.agent.llm import LLM
 
 
-def _session_path(session: str = None) -> tuple[Path, Path]:
+TOOL_LIST = Literal["web_search", "read_files"]
+
+
+def _session_path(session: str | None = None) -> tuple[Path, Path]:
     if session is not None:
         return CHAT_DIR / f"{session}.json", CHAT_DIR / f"{session}_chat_history.json"
     else:
@@ -19,7 +25,7 @@ def _session_path(session: str = None) -> tuple[Path, Path]:
 
 
 class Chat:
-    def __init__(self, session: str = None):
+    def __init__(self, session: str | None = None):
         self.active_conv_path, self.chat_history_path   = _session_path(session)
         self.prompt                                     = SYS_PROMPT
         self._messages                                  = self._load_chat()
@@ -61,7 +67,7 @@ class Chat:
         self._messages = []
         self.active_conv_path.write_text("[]")
 
-    def save(self, msg: dict = None):
+    def save(self, msg: dict | None = None):
         """
         Create file(s) if it does not exist already.
 
@@ -106,29 +112,165 @@ class Chat:
         else:
             return f"Error: Session {self.chat_history_path.name}'s chat history not found."
 
-    def append_message(
-            self,
-            role: str,
-            content: str,
-            state: Literal["internal", "external"],
-            prompt_tokens: int = 0,
-            output_tokens: int = 0
+    # ========================================================
+    # Metadata
+    # ========================================================
+
+    def _attachments_metadata(self, attachments: list[str] | None) -> dict[str, dict[str, Any]]:
+        """
+        Add metadata to every filename in the list of filenames.
+
+        {
+            "filename": {
+                "mime_type": "type",
+                "size_bytes": size,
+            }
+        }
+        """
+        if attachments:
+
+            attachment_dict = {}
+
+            for attachment in attachments:
+                path = Path(DROPBOX_DIR) / attachment
+                mime_type, _ = mimetypes.guess_type(path)
+                
+                attachment_dict[path.name] = {
+                    "mime_type": mime_type,
+                    "size_bytes": path.stat().st_size if path.exists else 0
+                }
+
+            return attachment_dict
+
+        return {"": {"": []}}
+
+    def _web_search_metadata(
+        self,
+        queries_with_urls: list[dict[str, list[str]]] | None,
+    ) -> dict[str, list[str]]:
+        """
+        Add metadata to every query in the list of queries.
+
+        {
+            "query_name": [
+                "query_url",
+            ]
+        }
+        """
+        if queries_with_urls:
+            web_search_dict = {}
+            
+            for query_dict in queries_with_urls:
+                web_search_dict.update(query_dict)
+
+            return web_search_dict
+        
+        return {"": [""]}
+
+    def _tool_calls_metadata(
+        self,
+        msg: dict[str, Any],
+        attachments: list[str] | None = None,
+        read_dropbox: bool = False,
+        queries_with_urls: list[dict[str, list[str]]] | None = None,
+        search: bool = False
+    ) -> dict[str, dict[str, Any]]:
+        """
+        Add metadata to every tool call in the list of tool calls.
+
+        "tool_calls": {
+            "attachments": {
+                "filename": {
+                    "mime_type": "type",
+                    "size_bytes": size,
+                },
+            },
+            "web_search": {
+                "query_name": [
+                    "query_url",
+                ],
+            }
+        }
+        """
+        tool_entries = {}
+
+        # Read files
+        if read_dropbox == True:
+            tool_entries["attachments"] = self._attachments_metadata(attachments)
+
+        # Web search
+        if search == True:
+            tool_entries["web_search"] = self._web_search_metadata(queries_with_urls)
+
+        msg["tool_calls"] = tool_entries
+
+        return tool_entries
+
+    def append_user_message_with_metadata(
+        self,
+        content: str,
+        state: Literal["internal", "external"],
+        attachments: list[str] | None = None,
     ):
         """
-        Every message contains 'role', 'content', 'state' entires.
-
-        If 'role' = 'assistant', the stored message will contains
-        'prompt_tokens' and 'output_tokens' as well.
-
         State:
         - 'internal': Pre-written prompt.
         - 'external': User/model interactions.
         """
-        msg = {"role": role, "content": content, "state": state}
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        if role == "assistant" and prompt_tokens:
-            msg["prompt_tokens"] = prompt_tokens
-            msg["output_tokens"] = output_tokens
+        msg: dict[str, Any] = {
+            "timestamp": timestamp,
+            "role": "user",
+            "content": content,
+            "state": state
+        }
+
+        # Attachments metadata processing
+        if attachments:
+            msg["attachments"] = self._attachments_metadata(attachments)
+
+        self._messages.append(msg)
+        self.save(msg)
+
+    def append_assistant_message_with_metadata(
+        self,
+        content: str,
+        state: Literal["internal", "external"],
+
+        attachments: list[str] | None = None,
+        read_dropbox: bool = False,
+
+        query_with_urls: list[dict[str, list[str]]] | None = None,
+        search: bool = False,
+
+        prompt_tokens: int = 0,
+        output_tokens: int = 0
+    ):
+        """
+        State:
+        - 'internal': Pre-written prompt.
+        - 'external': User/model interactions.
+        """
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Applicable for all
+        msg: dict[str, Any] = {
+            "timestamp": timestamp,
+            "role": "assistant",
+            "content": content,
+            "state": state
+        }
+
+        # Tool calls metadata processing
+        self._tool_calls_metadata(msg, attachments, read_dropbox, query_with_urls, search)
+
+        self._messages.append(msg)
+        self.save(msg)
+
+    def append_system_prompt(self, content: str):
+        """Add system prompt to messages."""
+        msg = {"role": "system", "content": content, "state": "internal"}
 
         self._messages.append(msg)
         self.save(msg)
@@ -172,9 +314,17 @@ class Chat:
         )
 
         self.clear()
-        self.append_message("system", self.prompt, "internal")
-        self.append_message("user", instruction, "internal")
-        self.append_message("assistant", summary, "internal", prompt_tokens, output_tokens)
+        self.append_system_prompt(self.prompt)
+        self.append_user_message_with_metadata(
+            content=instruction,
+            state="internal"
+        )
+        self.append_assistant_message_with_metadata(
+            content=summary,
+            state="internal",
+            prompt_tokens=prompt_tokens,
+            output_tokens=output_tokens
+        )
 
         # if max_token < a higher set number (~ 7-13B model max)
         #   keep ~ 3-6 conversations, or the sum of

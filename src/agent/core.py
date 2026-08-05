@@ -1,3 +1,4 @@
+from re import search
 import ollama
 from pathlib import Path
 
@@ -42,7 +43,12 @@ def _detect_cmd(prompt: str) -> tuple[str | None, str]:
 
 
 class Agent:
-    def __init__(self, model: str = MODEL, session: str = None, project: str = None):
+    def __init__(
+        self,
+        model: str = MODEL,
+        session: str | None = None,
+        project: str | None = None
+    ):
         self._validate_model(model)
 
         if MODEL_MAX_TOKENS:
@@ -106,63 +112,6 @@ class Agent:
             print("Compression complete, continue session.")
 
     # ===================================
-    # Extra context
-    # ===================================
-
-    def _file_context(
-            self,
-            context: list[dict],
-            prompt: str
-        ) -> tuple[list[Path], list[Path]] | None:
-        """
-        Model decides to read which previously uploaded files.
-
-        Steps:
-        1. Requires model as controller to return 'True' or 'False' to read file.
-        2. If 'True', model return list of filenames available in that session.
-        3. Model choose which file(s) to read, return filename(s).
-        """
-        output = self.file_reader.require_file_or_not(context, prompt)
-
-        # Model decide to read files
-        if output == True:
-            found_file_paths, not_found_file_paths = self.file_reader.get_filenames(context, prompt)
-
-        # Model decide not to read files
-        else:
-            return
-
-        return found_file_paths, not_found_file_paths
-
-    def _add_extra_context(
-            self,
-            messages: list[dict],
-            memory_entries: str,
-            file_contents: str,
-            search_result: str,
-            list_of_files: list[str],
-            prompt: str
-    ):
-        """If memory entries are given model reads the list of files and response, else skip."""
-        combined_prompt = f"{memory_entries}\n{file_contents}\n{search_result}\nUser input:\n{prompt}"
-
-        answer, prompt_tokens, output_tokens = self.file_reader.read_files_with_context_prompt(
-            context=messages,
-            context_prompt=combined_prompt,
-            list_of_files=list_of_files,
-            prompt=combined_prompt
-        )
-
-        # Save messages
-        self.chat.append_message("user", prompt, "external")
-        self.chat.append_message("assistant", answer, "external", prompt_tokens, output_tokens)
-
-        # Track token count
-        total_tokens_spent      = 0
-        total_tokens_spent      += (prompt_tokens + output_tokens)
-        current_window_tokens   = self.tokens.count_history_tokens(self.chat.to_llm())
-
-    # ===================================
     # Commands
     # ===================================
 
@@ -192,7 +141,7 @@ class Agent:
             return "Please specify what to memorize."
 
         print(f"Extracting content from user's input...")
-        created_ids = self.memory.extract_to_db(
+        created_ids, prompt_tokens, output_tokens = self.memory.extract_to_db(
             context=self.chat.to_llm(),
             prompt=prompt,
             source="explicit",
@@ -217,17 +166,23 @@ class Agent:
 
         # Only save messages if continue
         confirmation = "Memory saved to database."
-        self.chat.append_message("user", prompt, "external")
-        self.chat.append_message("assistant", confirmation, "external")
+        self.chat.append_user_message_with_metadata(
+            content=prompt,
+            state="external"
+        )
+        self.chat.append_assistant_message_with_metadata(
+            content=confirmation,
+            state="external",
+            prompt_tokens=prompt_tokens,
+            output_tokens=output_tokens
+        )
+
         return confirmation
 
     def _cmd_recall(self, prompt: str):
         """Retrieve and print relevant entries accourding to user prompt."""
         if not prompt:
             return "Please specify what to recall."
-
-        # Save user's question
-        self.chat.append_message("user", prompt, "external")
 
         recalled_entries = self.memory.retrieve_relevant_entry(prompt, limit=4)
 
@@ -238,8 +193,18 @@ class Agent:
         else:
             return f"Error: No matching memories found."
 
-        # Add recalled memory to chat
-        self.chat.append_message("assistant", recalled, "external")
+        # Save user's question
+        self.chat.append_user_message_with_metadata(
+            content=prompt,
+            state="external"
+        )
+
+        # Add recalled memory to chat (Embedding model: no tokens counts)
+        self.chat.append_assistant_message_with_metadata(
+            content=recalled,
+            state="external"
+        )
+
         return recalled
 
     def _cmd_search(self, prompt: str) -> str | None:
@@ -253,30 +218,103 @@ class Agent:
             prompt=prompt
         )
 
-        search_agent_result = self.search_agent.web(
+        response, query_with_urls, prompt_tokens, output_tokens, search = self.search_agent.web(
             query=query,
             context=self.chat.to_llm(),
             prompt=prompt,
             max_results=MAX_RESULTS
         )
 
-        if isinstance(search_agent_result, str):
-            response                        = search_agent_result
-            prompt_tokens, output_tokens    = 0, 0
-            return response
-        else:
-            response, prompt_tokens, output_tokens = search_agent_result
+        # Save user messages
+        self.chat.append_user_message_with_metadata(
+            content=prompt,
+            state="external"
+        )
 
-        # Save messages
-        self.chat.append_message("user", prompt, "external")
-        self.chat.append_message("assistant", response, "external")
-
-        # Track token count
-        total_tokens_spent = 0
-        total_tokens_spent += (prompt_tokens + output_tokens)
-        current_window_tokens = self.tokens.count_history_tokens(self.chat.to_llm())
+        # Save assistant messages
+        self.chat.append_assistant_message_with_metadata(
+            content=response,
+            state="external",
+            query_with_urls=query_with_urls,
+            search=True,
+            prompt_tokens=prompt_tokens,
+            output_tokens=output_tokens
+        )
 
         return None
+
+    # ===================================
+    # Extra context
+    # ===================================
+
+    def _file_context(
+            self,
+            context: list[dict],
+            prompt: str
+        ) -> tuple[list[str], list[str]] | None:
+        """
+        Model decides to read which previously uploaded files.
+
+        Steps:
+        1. Requires model as controller to return 'True' or 'False' to read file.
+        2. If 'True', model return list of filenames available in that session.
+        3. Model choose which file(s) to read, return filename(s).
+        """
+        output = self.file_reader.require_file_or_not(context, prompt)
+
+        # Model decide to read files
+        if output == True:
+            found_files, not_found_files = self.file_reader.get_filenames(context, prompt)
+
+        # Model decide not to read files
+        else:
+            return
+
+        return found_files, not_found_files
+
+    def _add_extra_context(
+        self,
+        messages: list[dict],
+        memory_entries: str,
+
+        file_contents: str,
+        dropbox_files: list[str],
+        read_dropbox: bool,
+
+        search_results: str,
+        query_with_urls: list[dict[str, list[str]]],
+        search: bool,
+
+        list_of_files: list[str] | None,
+
+        prompt: str
+    ):
+        """If memory entries are given model reads the list of files and response, else skip."""
+        combined_prompt = f"{memory_entries}\n{file_contents}\n{search_results}\nUser input:\n{prompt}"
+
+        answer, prompt_tokens, output_tokens = self.file_reader.read_files_with_context_prompt(
+            context=messages,
+            context_prompt=combined_prompt,
+            list_of_files=list_of_files,
+            prompt=combined_prompt
+        )
+
+        # Save user message
+        self.chat.append_user_message_with_metadata(
+            content=prompt,
+            state="external",
+            attachments=list_of_files
+        )
+
+        # Save assistant message
+        self.chat.append_assistant_message_with_metadata(
+            content=answer,
+            state="external", 
+            attachments=dropbox_files,
+            query_with_urls=query_with_urls,
+            prompt_tokens=prompt_tokens,
+            output_tokens=output_tokens
+        )
 
     # ===================================
     # Execution
@@ -289,7 +327,7 @@ class Agent:
         auto_web_search: bool = True,
         auto_read_dropbox: bool = True,
         extra_context: bool = False,
-        list_of_files: list[str] = None
+        list_of_files: list[str] | None = None
     ) -> None | str:
         """
         Model decide what memories to read.
@@ -379,15 +417,44 @@ class Agent:
 
         messages = self.chat.to_llm()
 
-        memory_entries = self.memory.toggle_auto_add_memory_entry(auto_memory_retrieve, messages, prompt)
+        memory_entries = self.memory.toggle_auto_add_memory_entry(
+            auto_memory_retrieve,
+            messages,
+            prompt
+        )
 
-        file_contents = self.file_reader.toggle_auto_read_dropbox(self.max_tokens, auto_read_dropbox, messages, prompt)
+        file_contents, found_file_paths, read_dropbox = self.file_reader.toggle_auto_read_dropbox(
+            self.max_tokens,
+            auto_read_dropbox,
+            messages,
+            prompt
+        )
 
-        search_results = self.search_agent.toggle_auto_web_search(self.max_tokens, auto_web_search, messages, prompt, memory_entries)
+        search_results, query_with_urls, search = self.search_agent.toggle_auto_web_search(
+            self.max_tokens,
+            auto_web_search,
+            messages,
+            prompt,
+            memory_entries
+        )
 
         # Toggle extra_context (read files)
         if extra_context == True:
-            self._add_extra_context(messages, memory_entries, file_contents, search_results, list_of_files, prompt)
+            self._add_extra_context(
+                messages=messages,
+                memory_entries=memory_entries,
+
+                file_contents=file_contents,
+                dropbox_files=found_file_paths,
+                read_dropbox=read_dropbox,
+
+                search_results=search_results,
+                query_with_urls=query_with_urls,
+                search=search,
+
+                list_of_files=list_of_files,
+                prompt=prompt
+            )
 
             # ==============
             # // End here //
@@ -404,8 +471,18 @@ class Agent:
         answer, prompt_tokens, output_tokens = LLM.model_response(messages, model = self.model)
 
         # Save messages
-        self.chat.append_message("user", prompt, "external")
-        self.chat.append_message("assistant", answer, "external", prompt_tokens, output_tokens)
+        self.chat.append_user_message_with_metadata(
+            content=prompt,
+            state="external"
+        )
+        self.chat.append_assistant_message_with_metadata(
+            content=answer,
+            state="external",
+            attachments=found_file_paths,
+            query_with_urls=query_with_urls,
+            prompt_tokens=prompt_tokens,
+            output_tokens=output_tokens
+        )
 
         # Add autosave to memory function (Toggle on/off)
 

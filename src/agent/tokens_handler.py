@@ -17,7 +17,7 @@ MODEL_MAX = {
 # pm_tokens = Tokens(PM_MODEL, PM_MAX_TOKENS)
 
 class Tokens:
-    def __init__(self, model: str, max_tokens: int = None):
+    def __init__(self, model: str, max_tokens: int | None = None):
         self.model = model
 
         # ========================================

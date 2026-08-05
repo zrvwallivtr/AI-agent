@@ -1,5 +1,6 @@
 import os
 import re
+from typing import Optional
 import pdfplumber
 from pathlib import Path
 import openpyxl
@@ -15,7 +16,7 @@ from src.agent.chat import Chat
 from src.config import AUTO_READ_DROPBOX_TOKENS, MODEL, DROPBOX_DIR, FILE_OR_NOT_PROMPT, GET_FILE_LIST_PROMPT
 
 
-def _session_path(session: str = None) -> Path:
+def _session_path(session: str | None = None) -> Path:
     if session is not None:
         return DROPBOX_DIR / session
     return DROPBOX_DIR / "chat"
@@ -33,7 +34,7 @@ def _is_dir_empty(path: Path) -> bool:
 
 
 class FileReader:
-    def __init__(self, session: str = None):
+    def __init__(self, session: str | None = None):
         self.model              = MODEL
         self.file_or_not_prompt = FILE_OR_NOT_PROMPT
         self.file_list_prompt   = GET_FILE_LIST_PROMPT
@@ -203,7 +204,7 @@ class FileReader:
 
         return [f.name for f in self.store_file_path.iterdir () if f.is_file()]
 
-    def clear_session_dropbox(self, session: str = None) -> str:
+    def clear_session_dropbox(self, session: str | None = None) -> str:
         """Remove session dropbox directory when cleaning history."""
         if self.store_file_path.exists():
             for child in self.store_file_path.iterdir():
@@ -219,9 +220,10 @@ class FileReader:
     # Load files
     # ==================================================
 
-    def load_file_contents(self, paths: list[Path]) -> str:
+    def load_file_contents(self, filenames: list[str]) -> str:
         """From a list of paths, returns contents in path as a string."""
         blocks = []
+        paths = [Path(DROPBOX_DIR / filename) for filename in filenames]
 
         for path in paths:
 
@@ -262,7 +264,7 @@ class FileReader:
         else:
             return False
 
-    def get_filenames(self, context: list[dict], prompt: str) -> tuple[list[Path], list[Path]]:
+    def get_filenames(self, context: list[dict], prompt: str) -> tuple[list[str], list[str]]:
         """Ask model to choose from available in current session to get relevant context."""
         response = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
@@ -299,30 +301,35 @@ class FileReader:
             self,
             context: list[dict],
             context_prompt: str,
-            list_of_files: list[str],
+            list_of_files: list[str] | None,
             prompt: str
     ) -> tuple[str, int, int]:
         """Read all files contents from a list of filenames."""
         labelled_content = ["Here are the required context:\n"]
 
-        for filename in list_of_files:
-            path    = Path(self.store_file_path / filename)
-            ext     = path.suffix.lower()
+        if list_of_files:
 
-            if not path.exists():
-                print(f"Error: File {path} not found.", 0, 0)
+            for filename in list_of_files:
+                path    = Path(self.store_file_path / filename)
+                ext     = path.suffix.lower()
 
-            # Route to correct parser, fallback to plain text if unknown
-            parser = self.formats.get(ext, self._read_txt)
-            file_content = parser(path)
+                if not path.exists():
+                    return f"Error: File {path} not found.", 0, 0
 
-            block = (
-                f"Context from file:"
-                f"Filename = {filename}\n"
-                f"{file_content}\n"
-                "="*40
-            )
-            labelled_content.append(block)
+                # Route to correct parser, fallback to plain text if unknown
+                parser = self.formats.get(ext, self._read_txt)
+                file_content = parser(path)
+
+                block = (
+                    f"Context from file:"
+                    f"Filename = {filename}\n"
+                    f"{file_content}\n"
+                    "="*40
+                )
+                labelled_content.append(block)
+
+        else:
+            return "Error: No files provided", 0, 0
 
         next_message    = LLM.user(f"{context_prompt}\n{labelled_content}\nUser input:\n{prompt}")
         messages        = context + [next_message]
@@ -340,7 +347,7 @@ class FileReader:
             auto_read_dropbox: bool,
             messages: list[dict],
             prompt: str
-    ) -> str:
+    ) -> tuple[str, list[str], bool]:
         """
         Auto fetches previous file contents ability, return relevant files if its toggled on.
 
@@ -354,9 +361,11 @@ class FileReader:
             require_file = self.require_file_or_not(messages, prompt)
 
             if require_file == True:
-                found_file_paths, not_found_file_paths = self.get_filenames(messages, prompt)
+                found_files, not_found_files = self.get_filenames(messages, prompt)
 
-                return self.load_file_contents(found_file_paths)
+                return self.load_file_contents(found_files), found_files, True
+
+            return "", [], False
 
         else:
-            return ""
+            return "", [], False

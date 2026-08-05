@@ -33,7 +33,7 @@ class LLM:
     # ===========================
 
     @staticmethod
-    def model_response(messages: str, model: str) -> tuple[str, int, int]:
+    def model_response(messages: list[dict], model: str) -> tuple[str, int, int]:
         response        = ""
         prompt_tokens   = 0
         output_tokens   = 0

@@ -78,6 +78,16 @@ def _scrape_url_content(url: str) -> str:
         print(f"Scraping failed for {url}: {e}")
         return ""
 
+def _urls_from_results(results: list[dict]) -> list[str]:
+    """Get all URLs from the visited website."""
+    urls = []
+
+    for i, result in enumerate(results[:MAX_RESULTS], start=1):
+        url = result.get("url", "")
+        urls.append(url)
+
+    return urls
+
 def _store_results_in_tmp_file(results: list[dict]) -> str:
     """Store all results in a specific format temporary file."""
     all_results = ""
@@ -104,7 +114,7 @@ def _store_results_in_tmp_file(results: list[dict]) -> str:
     tmp.close()
     return tmp.name
 
-def _read_tmp_file(filename: str) -> list[dict]:
+def _read_tmp_file(filename: str) -> str:
     """Read all contents in temporary file."""
     with open(filename, "r") as f:
         content = f.read()
@@ -198,7 +208,61 @@ class SearchAgent:
 
         return self.search_query_check(response.message.content)
 
-    def auto_web_search(self, context: list[dict], prompt: str) -> str:
+    def web(
+        self,
+        query: str,
+        context: list[dict],
+        prompt: str,
+        max_results=MAX_RESULTS
+    ) -> tuple[str, list[dict[str, list[str]]], int, int, bool]:
+        """
+        Answer question from search results. Always returns
+        a 4-element tuple to maintain unpack safety.
+
+        Steps:
+        1. Search web, outputing custom max results.
+        2. Store results into a temporary file.
+        3. Model reads file and response.
+        
+        Note: Only the initial user's question and model
+              generated response will be logged.
+        """
+        print(f"Searching {query} on {SEARCH_ENG}...")
+
+        results = _get_results_from_query(query, SEARCH_ENG, MAX_RESULTS)
+        if not results:
+            return "Error: No results found.", [{"": []}], 0, 0, False
+
+        # Store in temp file
+        tmp     = _store_results_in_tmp_file(results)
+        urls    = _urls_from_results(results)
+
+        query_with_urls = [{f"{query}": urls}]
+
+        # Model reads search results
+        try:
+            print("Reading search results...")
+            search_results = _read_tmp_file(tmp)
+
+            # print(search_results)
+
+            query_message = LLM.user(f"Context from web search:\n\n{search_results}\n\nUser question: {prompt}") # This won't be saved in chat
+
+            messages = context + [query_message]
+
+            response, prompt_tokens, output_tokens = LLM.model_response(messages, self.model)
+            return response, query_with_urls, prompt_tokens, output_tokens, True
+
+        finally:
+            # Ensure cleanup even if LLM fails mid-execution
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+
+    def auto_web_search(
+        self,
+        context: list[dict],
+        prompt: str
+    ) -> tuple[str, list[dict[str, list[str]]], bool]:
         """Generates, search and answer query based on user prompt."""
         #print("Generating query...")
         query = self.generates_query(
@@ -206,32 +270,28 @@ class SearchAgent:
             prompt=prompt
         )
 
-        search_agent_result = self.web(
+        response, query_with_urls, prompt_tokens, output_tokens, search = self.web(
             query=query,
             context=context,
             prompt=prompt,
             max_results=MAX_RESULTS
         )
 
-        if isinstance(search_agent_result, str):
-            response                        = search_agent_result
-            prompt_tokens, output_tokens    = 0, 0
-            return response
-        else:
-            response, prompt_tokens, output_tokens = search_agent_result
+        if search == False:
+            return "Skip.", [{"": []}], False
 
         response = f"{response}\n{'=' * 40}"
 
-        return response
+        return response, query_with_urls, True
 
     def toggle_auto_web_search(
-            self,
-            max_tokens: int,
-            auto_web_search: bool,
-            messages: list[dict],
-            prompt: str,
-            memory_entries: str | None
-    ) -> str:
+        self,
+        max_tokens: int,
+        auto_web_search: bool,
+        messages: list[dict],
+        prompt: str,
+        memory_entries: str | None
+    ) -> tuple[str, list[dict[str, list[str]]], bool]:
         """
         Auto web search ability, returns search results if its toggled on.
 
@@ -254,45 +314,5 @@ class SearchAgent:
             if search == True:
                 return self.auto_web_search(messages, prompt)
 
-        return ""
+        return "Skip.", [{"": []}], False
 
-    def web(self, query: str, context: list[dict], prompt: str, max_results=MAX_RESULTS) -> str | tuple[str, int, int]:
-        """
-        Answer question from search results. Always returns
-        a 3-element tuple to maintain unpack safety.
-
-        Steps:
-        1. Search web, outputing custom max results.
-        2. Store results into a temporary file.
-        3. Model reads file and response.
-        
-        Note: Only the initial user's question and model
-              generated response will be logged.
-        """
-        print(f"Searching {query} on {SEARCH_ENG}...")
-
-        results = _get_results_from_query(query, SEARCH_ENG, MAX_RESULTS)
-        if not results:
-            return "Error: No web search results could be retrieved."
-
-        # Store in temp file
-        tmp = _store_results_in_tmp_file(results)
-
-        # Model reads search results
-        try:
-            print("Reading search results...")
-            search_results = _read_tmp_file(tmp)
-
-            # print(search_results)
-
-            query_message = LLM.user(f"Context from web search:\n\n{search_results}\n\nUser question: {prompt}") # This won't be saved in chat
-
-            messages = context + [query_message]
-
-            response, prompt_tokens, output_tokens = LLM.model_response(messages, self.model)
-            return response, prompt_tokens, output_tokens
-
-        finally:
-            # Ensure cleanup even if LLM fails mid-execution
-            if os.path.exists(tmp):
-                os.unlink(tmp)
