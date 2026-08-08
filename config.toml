@@ -1,4 +1,4 @@
-[models]
+models]
 #chat                = "gemma3:1b"
 chat                = "ministral_3b:latest"
 memory              = "nomic-embed-text"

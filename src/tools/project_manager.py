@@ -1,13 +1,13 @@
 from pathlib import Path
 from datetime import datetime
 
-from src.config import PM_MODEL, PM_PROMPT, PROJECTS_DIR
 from src.agent.llm import LLM
 from src.agent.chat import Chat
+from src import config
 
 
 def _project_path(project_name):
-    PROJECT_DIR = PROJECTS_DIR / project_name
+    PROJECT_DIR = config.PROJECTS_DIR / project_name
     return PROJECT_DIR
 
 
@@ -53,12 +53,12 @@ class ProjectManager:
             return None
         chat        = Chat(session=session)
         messages    = [
-            LLM.system(PM_PROMPT),
+            LLM.system(config.PM_PROMPT),
             LLM.user("Summarise the project based on the following conversations."),
             chat.to_llm,
             LLM.user(question),
         ]
-        response = LLM.model_response(messages, model=PM_MODEL)
+        response = LLM.model_response(messages, model=config.PM_MODEL)
         self.add_entry("Summary", response)
         return response
 
@@ -73,7 +73,7 @@ class ProjectManager:
         summary_txt = self.read_file("Summary")
         tasks       = self.read_file("Tasks")
         messages    = [
-            LLM.system(PM_PROMPT),
+            LLM.system(config.PM_PROMPT),
             LLM.user(
                 "Create/update the task list in markdown checkbox format (- [ ] task), ordered by priority based on the following summary and tasklist."
             ),
@@ -82,7 +82,7 @@ class ProjectManager:
             LLM.user("Tasks:"),
             LLM.user(tasks),
         ]
-        response    = LLM.model_response(messages, model=PM_MODEL)
+        response    = LLM.model_response(messages, model=config.PM_MODEL)
         self.write("Tasks", response)
         return response
 
@@ -97,7 +97,7 @@ class ProjectManager:
         decisions_txt   = self.read_file("Decisions")
         chat            = Chat(session=session)
         messages        = [
-            LLM.system(PM_PROMPT),
+            LLM.system(config.PM_PROMPT),
             LLM.user("Here is the current decision list:"),
             LLM.user(decisions_txt),
             LLM.user(
@@ -106,7 +106,7 @@ class ProjectManager:
             chat.to_llm,
             LLM.user(question),
         ]
-        response        = LLM.model_response(messages, model=PM_MODEL)
+        response        = LLM.model_response(messages, model=config.PM_MODEL)
         self.add_entry("Decisions", response)
         return response
 

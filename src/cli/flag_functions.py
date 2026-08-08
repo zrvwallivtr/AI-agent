@@ -1,6 +1,7 @@
 import ollama
 from pathlib import Path
-from src.config import DEFAULT_PATH, DEFAULT_CHAT_HISTORY_PATH, CHAT_DIR
+
+from src import config
 from src.agent.chat import Chat
 from src.agent.core import Agent
 from src.tools.file_reader import FileReader
@@ -14,7 +15,7 @@ from src.tools.file_reader import FileReader
 # - delete default chat file in DEFAULT_PATH
 # --------------------------------------------------------
 
-def _delete_session_files(session: str = None):
+def _delete_session_files(session: str | None = None):
     """
     Delete session related files. If 'session'
     is not specified, delete default session 
@@ -42,7 +43,7 @@ def _delete_session_files(session: str = None):
 
 class General:
     @staticmethod
-    def question(model, prompt, session: str = None, project: str = None):
+    def question(model, prompt, session: str | None = None, project: str | None = None):
         """Ask question only, not flags."""
         agent   = Agent(model=model, session=session, project=project)
         answer  = agent.ask(prompt=prompt)
@@ -75,7 +76,7 @@ class Session:
         self.session    = session
         self.chat       = Chat(session)
 
-    def create_session(self, model: str, prompt: str = None) -> None:
+    def create_session(self, model: str, prompt: str | None = None) -> None:
         """
         If no question asked:
         - Create session.
@@ -102,10 +103,10 @@ class Session:
     @staticmethod
     def list_session():
         """List all user created sessions, do not display session's chat history."""
-        exclude         = {DEFAULT_PATH.name, DEFAULT_CHAT_HISTORY_PATH.name}
+        exclude         = {config.DEFAULT_PATH.name, config.DEFAULT_CHAT_HISTORY_PATH.name}
         all_sessions    = [
             p.name.replace(".json", "")
-            for p in CHAT_DIR.glob("*.json")
+            for p in config.CHATS_DIR.glob("*.json")
             if not p.name.endswith("_chat_history.json")
             if p.name not in exclude
         ]

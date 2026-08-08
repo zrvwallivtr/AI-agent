@@ -13,13 +13,13 @@ import warnings
 
 from src.agent.llm import LLM
 from src.agent.chat import Chat
-from src.config import AUTO_READ_DROPBOX_TOKENS, MODEL, DROPBOX_DIR, FILE_OR_NOT_PROMPT, GET_FILE_LIST_PROMPT
+from src import config
 
 
 def _session_path(session: str | None = None) -> Path:
     if session is not None:
-        return DROPBOX_DIR / session
-    return DROPBOX_DIR / "chat"
+        return config.DROPBOX_DIR / session
+    return config.DROPBOX_DIR / "chat"
 
 def _read_file_in_dropbox(path) -> str:
     """Read file contents in dropbox."""
@@ -35,9 +35,9 @@ def _is_dir_empty(path: Path) -> bool:
 
 class FileReader:
     def __init__(self, session: str | None = None):
-        self.model              = MODEL
-        self.file_or_not_prompt = FILE_OR_NOT_PROMPT
-        self.file_list_prompt   = GET_FILE_LIST_PROMPT
+        self.model              = config.MODEL
+        self.file_or_not_prompt = config.FILE_OR_NOT_PROMPT
+        self.file_list_prompt   = config.GET_FILE_LIST_PROMPT
         self.chat               = Chat(session=session)
         self.store_file_path    = _session_path(session)
 
@@ -223,7 +223,7 @@ class FileReader:
     def load_file_contents(self, filenames: list[str]) -> str:
         """From a list of paths, returns contents in path as a string."""
         blocks = []
-        paths = [Path(DROPBOX_DIR / filename) for filename in filenames]
+        paths = [Path(config.DROPBOX_DIR / filename) for filename in filenames]
 
         for path in paths:
 
@@ -353,10 +353,10 @@ class FileReader:
 
         Model decides from {memory_entries} + {prompt} --> {file_content} from dropbox
         """
-        if auto_read_dropbox == True and max_tokens > AUTO_READ_DROPBOX_TOKENS:
+        if auto_read_dropbox == True and max_tokens > config.AUTO_READ_DROPBOX_TOKENS:
 
             # Check if dropbox is empty
-            content_exists = _is_dir_empty(DROPBOX_DIR)
+            content_exists = _is_dir_empty(config.DROPBOX_DIR)
             
             require_file = self.require_file_or_not(messages, prompt)
 

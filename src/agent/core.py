@@ -9,16 +9,8 @@ from src.agent.memory import Memory
 from src.tools.search import is_connected, SearchAgent
 from src.tools.file_reader import FileReader
 
-from src.config import (
-    MODEL,
-    MEM_MANUAL_PROMPT,
-    CHROMADB_DIR,
-    DROPBOX_DIR,
-    MODEL_MAX_TOKENS,
-    MAX_RESULTS,
-    AUTO_READ_DROPBOX_TOKENS,
-    AUTO_WEBSEARCH_TOKENS
-)
+from src import config
+
 
 def _last_token_usage(messages: list[dict]) -> tuple[int, int]:
     """Returns prompt_tokens and output_tokens from the latest assistant message."""
@@ -45,20 +37,22 @@ def _detect_cmd(prompt: str) -> tuple[str | None, str]:
 class Agent:
     def __init__(
         self,
-        model: str = MODEL,
+        model: str | None = None,
         session: str | None = None,
         project: str | None = None
     ):
+        model = config.MODEL if model is None else model
+
         self._validate_model(model)
 
-        if MODEL_MAX_TOKENS:
-            self.tokens = Tokens(model, MODEL_MAX_TOKENS)
+        if config.MODEL_MAX_TOKENS:
+            self.tokens = Tokens(model, config.MODEL_MAX_TOKENS)
         else:
             self.tokens = Tokens(model)
 
         self.model          = model  # model is specified in the config file
         self.chat           = Chat(session=session)
-        self.memory         = Memory(chat=self.chat, project=project)
+        self.memory         = Memory(project=project)
         self.search_agent   = SearchAgent()
         self.project        = project
         self.file_reader    = FileReader(session=session)
@@ -115,12 +109,13 @@ class Agent:
     # Commands
     # ===================================
 
-    def _cmd_forget(self, prompt: str):
+    def _cmd_forget(self, prompt: str) -> str:
         """Find exact match in memory from user prompt and remove said entry."""
         if not prompt:
             return "Please specify what to forget."
 
         match_data = self.memory.get_exact_match(prompt)
+
         if not match_data:
             return f"Error: No matching memory found."
 
@@ -135,7 +130,7 @@ class Agent:
         self.memory.delete_from_db([target_id])
         return "Entry deleted."
 
-    def _cmd_memorise(self, prompt: str):
+    def _cmd_memorise(self, prompt: str) -> str:
         """Extract key info from user prompt and save entries to memory."""
         if not prompt:
             return "Please specify what to memorize."
@@ -172,14 +167,14 @@ class Agent:
         )
         self.chat.append_assistant_message_with_metadata(
             content=confirmation,
-            state="external",
+            state="internal",
             prompt_tokens=prompt_tokens,
             output_tokens=output_tokens
         )
 
         return confirmation
 
-    def _cmd_recall(self, prompt: str):
+    def _cmd_recall(self, prompt: str) -> str:
         """Retrieve and print relevant entries accourding to user prompt."""
         if not prompt:
             return "Please specify what to recall."
@@ -222,7 +217,7 @@ class Agent:
             query=query,
             context=self.chat.to_llm(),
             prompt=prompt,
-            max_results=MAX_RESULTS
+            max_results=config.MAX_RESULTS
         )
 
         # Save user messages
@@ -337,7 +332,6 @@ class Agent:
         Note:
         - Only the user question and LLM response will be
           stored into chat history.
-        - Add an option to allow user to toggle memory retrieve.
 
         Process:
         1. Model decides from {prompt} --> {memory_entries}

@@ -1,8 +1,8 @@
 import argparse
 
-from src.config import MODEL
 from src.agent.core import Agent
 from src.agent.memory import Memory
+from src import config
 
 from src.tools.file_reader import FileReader
 from src.tools.project_manager import ProjectManager
@@ -16,7 +16,7 @@ def main():
 
     # General
     parser.add_argument("question",                 nargs="?",              help="Ask questions")
-    parser.add_argument("--model", "-m",            default=MODEL,          metavar=("MODEL_NAME"),                     help=f"Select model (defualt: {MODEL})")
+    parser.add_argument("--model", "-m",            default=config.MODEL,   metavar=("MODEL_NAME"),                     help=f"Select model (defualt: {config.MODEL})")
     parser.add_argument("--reset-default", "-rd",   action="store_true",    help="Reset default session")
     parser.add_argument("--installed-models", "-i", action="store_true",    help="List all installed ollama models")
 

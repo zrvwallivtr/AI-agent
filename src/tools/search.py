@@ -8,18 +8,14 @@ import ollama
 from bs4 import BeautifulSoup
 
 from src.agent.llm import LLM
-from src.config import (
-    MODEL,
-    SEARCH_ENG,
-    MAX_RESULTS,
-    SEARCH_OR_NOT_PROMPT,
-    QUERY_PROMPT,
-    MAX_CHAR_PER_PAGE,
-    AUTO_WEBSEARCH_TOKENS
-)
+from src import config
 
 
-def _get_results_from_query(query: str, SEARCH_ENG: str, MAX_RESULTS: int) -> list[dict]:
+def _get_results_from_query(
+    query: str,
+    search_eng: str = config.SEARCH_ENG,
+    max_results: int = config.MAX_RESULTS,
+) -> list[dict]:
     """Get results from given query, search engine and set max results."""
     params = {"q": query, "format": "json", "language": "en", "categories": "general"}
 
@@ -28,9 +24,9 @@ def _get_results_from_query(query: str, SEARCH_ENG: str, MAX_RESULTS: int) -> li
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     try:
-        r = requests.get(SEARCH_ENG, params=params, headers=headers, timeout=10)
+        r = requests.get(search_eng, params=params, headers=headers, timeout=10)
         r.raise_for_status()
-        return r.json().get("results", [])[:MAX_RESULTS]
+        return r.json().get("results", [])[:max_results]
 
     except Exception as e:
         print(f"Search failed: {e}")
@@ -72,7 +68,7 @@ def _scrape_url_content(url: str) -> str:
         clean_text  = "\n".join(clean_lines)
 
         # Context safety guardrail: Set max characters per webpage
-        return clean_text[:MAX_CHAR_PER_PAGE]
+        return clean_text[:config.MAX_CHAR_PER_PAGE]
 
     except Exception as e:
         print(f"Scraping failed for {url}: {e}")
@@ -82,7 +78,7 @@ def _urls_from_results(results: list[dict]) -> list[str]:
     """Get all URLs from the visited website."""
     urls = []
 
-    for i, result in enumerate(results[:MAX_RESULTS], start=1):
+    for i, result in enumerate(results[:config.MAX_RESULTS], start=1):
         url = result.get("url", "")
         urls.append(url)
 
@@ -92,12 +88,12 @@ def _store_results_in_tmp_file(results: list[dict]) -> str:
     """Store all results in a specific format temporary file."""
     all_results = ""
 
-    for i, result in enumerate(results[:MAX_RESULTS], start=1):
+    for i, result in enumerate(results[:config.MAX_RESULTS], start=1):
         url     = result.get("url", "")
         title   = result.get("title", "")
         snippet = result.get("content", "")
 
-        print(f"[{i}/{MAX_RESULTS}] Scraping: {url}...")
+        print(f"[{i}/{config.MAX_RESULTS}] Scraping: {url}...")
 
         # Fall back to the search snippet if web scraper gets blocked
         full_page_body  = _scrape_url_content(url)
@@ -143,9 +139,9 @@ def is_connected(host="1.1.1.1", port=53, timeout=3):
 
 class SearchAgent:
     def __init__(self):
-        self.model                  = MODEL
-        self.search_or_not_prompt   = SEARCH_OR_NOT_PROMPT
-        self.query_prompt           = QUERY_PROMPT
+        self.model                  = config.MODEL
+        self.search_or_not_prompt   = config.SEARCH_OR_NOT_PROMPT
+        self.query_prompt           = config.QUERY_PROMPT
 
     def search_or_not(self, context: list[dict], prompt: str) -> bool:
         """
@@ -213,7 +209,7 @@ class SearchAgent:
         query: str,
         context: list[dict],
         prompt: str,
-        max_results=MAX_RESULTS
+        max_results=config.MAX_RESULTS
     ) -> tuple[str, list[dict[str, list[str]]], int, int, bool]:
         """
         Answer question from search results. Always returns
@@ -227,9 +223,9 @@ class SearchAgent:
         Note: Only the initial user's question and model
               generated response will be logged.
         """
-        print(f"Searching {query} on {SEARCH_ENG}...")
+        print(f"Searching {query} on {config.SEARCH_ENG}...")
 
-        results = _get_results_from_query(query, SEARCH_ENG, MAX_RESULTS)
+        results = _get_results_from_query(query, config.SEARCH_ENG, config.MAX_RESULTS)
         if not results:
             return "Error: No results found.", [{"": []}], 0, 0, False
 
@@ -274,7 +270,7 @@ class SearchAgent:
             query=query,
             context=context,
             prompt=prompt,
-            max_results=MAX_RESULTS
+            max_results=config.MAX_RESULTS
         )
 
         if search == False:
@@ -300,7 +296,7 @@ class SearchAgent:
         # Check if internet is available
         internet = is_connected()
 
-        if internet == True and auto_web_search == True and max_tokens > AUTO_WEBSEARCH_TOKENS:
+        if internet == True and auto_web_search == True and max_tokens > config.AUTO_WEBSEARCH_TOKENS:
 
             # Enable auto web search
             search_context = messages

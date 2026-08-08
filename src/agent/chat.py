@@ -4,13 +4,7 @@ from pathlib import Path
 from typing import Literal, Optional, Any
 from datetime import datetime, timezone
 
-from src.config import (
-    DROPBOX_DIR,
-    SYS_PROMPT,
-    CHAT_DIR,
-    DEFAULT_PATH,
-    DEFAULT_CHAT_HISTORY_PATH
-)
+from src import config
 from src.agent.llm import LLM
 
 
@@ -19,15 +13,15 @@ TOOL_LIST = Literal["web_search", "read_files"]
 
 def _session_path(session: str | None = None) -> tuple[Path, Path]:
     if session is not None:
-        return CHAT_DIR / f"{session}.json", CHAT_DIR / f"{session}_chat_history.json"
+        return config.CHATS_DIR / f"{session}" / f"chat.json", config.CHATS_DIR / f"{session}" / f"chat_history.json"
     else:
-        return DEFAULT_PATH, DEFAULT_CHAT_HISTORY_PATH
+        return config.DEFAULT_PATH, config.DEFAULT_CHAT_HISTORY_PATH
 
 
 class Chat:
     def __init__(self, session: str | None = None):
         self.active_conv_path, self.chat_history_path   = _session_path(session)
-        self.prompt                                     = SYS_PROMPT
+        self.prompt                                     = config.SYS_PROMPT
         self._messages                                  = self._load_chat()
 
     def _load_chat(self) -> list[dict]:
@@ -132,7 +126,7 @@ class Chat:
             attachment_dict = {}
 
             for attachment in attachments:
-                path = Path(DROPBOX_DIR) / attachment
+                path = Path(config.DROPBOX_DIR) / attachment
                 mime_type, _ = mimetypes.guess_type(path)
                 
                 attachment_dict[path.name] = {

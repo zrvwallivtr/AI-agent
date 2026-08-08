@@ -8,14 +8,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Literal, get_args
 
-from src.config import (
-    MODEL,
-    EMBED_MODEL,
-    MEM_PROMPT,
-    MEM_MANUAL_PROMPT,
-    CHROMADB_DIR,
-    RETRIEVE_MEM_ENTRY_LIMIT
-)
+from src import config
 from src.agent.chat import Chat
 from src.agent.llm import LLM
 from src.agent.tokens_handler import Tokens
@@ -27,13 +20,12 @@ CATEGORIES = list(get_args(CATEGORY_TYPES))
 
 
 class Memory:
-    def __init__(self, chat: Chat, project: str | None = None):
-        self.model              = MODEL
-        self.embed_model        = EMBED_MODEL
-        self.mem_prompt         = MEM_PROMPT
-        self.mem_manual_prompt  = MEM_MANUAL_PROMPT
-        self.path               = CHROMADB_DIR
-        self.chat               = chat
+    def __init__(self, project: str | None = None):
+        self.model              = config.MODEL
+        self.embed_model        = config.EMBED_MODEL
+        self.mem_prompt         = config.MEM_PROMPT
+        self.mem_manual_prompt  = config.MEM_MANUAL_PROMPT
+        self.path               = config.CHROMADB_DIR
         self.project            = project
         self.tokens             = Tokens(self.embed_model)
 
@@ -61,7 +53,7 @@ class Memory:
 
         return retrieved_entries
 
-    def retrieve_relevant_entry(self, prompt: str, limit: int = RETRIEVE_MEM_ENTRY_LIMIT) -> list[dict]:
+    def retrieve_relevant_entry(self, prompt: str, limit: int = config.RETRIEVE_MEM_ENTRY_LIMIT) -> list[dict]:
         """Queries ChromaDB using semantics."""
         # Returns nothing if database is empty
         if self.vector_db.count() == 0:

@@ -1,8 +1,8 @@
-from pathlib import Path
 import shutil
-from urllib.parse import urlparse
 import tomllib
 import sys
+from pathlib import Path
+from urllib.parse import urlparse
 
 from src.agent.tokens_handler import MODEL_MAX, Tokens
 
@@ -26,7 +26,7 @@ DEFAULT_CONFIG  = BUNDLE_ROOT / "config.toml"
 
 
 # ========================================================
-# Writable persistent data (stored in ~/.agent_app/)
+# Writable persistent data (stored in ~/.agent_app)
 # ========================================================
 
 def get_user_app_dir(app_name: str = "agent_app") -> Path:
@@ -48,17 +48,17 @@ def get_user_app_data_dir(app_name: str = "agent_app") -> Path:
 DATA_DIR        = get_user_app_dir() # ~/.agent_app
 APP_DATA_DIR    = get_user_app_data_dir() # ~/.agent_app/data
 CUS_PROMPT_DIR  = APP_DATA_DIR / "prompts"
-CHAT_DIR        = APP_DATA_DIR / "chat"
+CHATS_DIR       = APP_DATA_DIR / "chats"
 CHROMADB_DIR    = APP_DATA_DIR / "chroma"
 PROJECTS_DIR    = APP_DATA_DIR / "projects"
 DROPBOX_DIR     = APP_DATA_DIR / "dropbox"
 
 # Defaults chat session paths
-DEFAULT_PATH                = CHAT_DIR / "chat.json"
-DEFAULT_CHAT_HISTORY_PATH   = CHAT_DIR / "chat_history.json"
+DEFAULT_PATH                = CHATS_DIR / "default_session" / "chat.json"
+DEFAULT_CHAT_HISTORY_PATH   = CHATS_DIR / "default_session" / "chat_history.json"
 
 # Auto-create user data directories on startup
-for folder in [DATA_DIR, APP_DATA_DIR, CUS_PROMPT_DIR, CHAT_DIR, CHROMADB_DIR, PROJECTS_DIR, DROPBOX_DIR]:
+for folder in [DATA_DIR, APP_DATA_DIR, CUS_PROMPT_DIR, CHATS_DIR, CHROMADB_DIR, PROJECTS_DIR, DROPBOX_DIR]:
     folder.mkdir(parents=True, exist_ok=True)
 
 # ========================================================
@@ -67,11 +67,18 @@ for folder in [DATA_DIR, APP_DATA_DIR, CUS_PROMPT_DIR, CHAT_DIR, CHROMADB_DIR, P
 
 config_file = DATA_DIR / "config.toml"
 
-# Check if 'config.toml' exists in '~/.agent_app'
-if not config_file.exists() and DEFAULT_CONFIG.exists():
-    shutil.copy(DEFAULT_CONFIG, config_file) # Copy default 'config.toml' to '~/.agent_app/'
-elif not config_file.exists():
-    config_file = DEFAULT_CONFIG # Fallback to default
+def config_toml_handler(config_file: Path):
+    """
+    Check if 'config.toml' exists in '~/.agent_app',
+    if not copy the default config.toml to user directory.
+    """
+    if not config_file.exists() and DEFAULT_CONFIG.exists():
+        shutil.copy(DEFAULT_CONFIG, config_file) # Copy default 'config.toml' to '~/.agent_app/'
+
+    elif not config_file.exists():
+        config_file = DEFAULT_CONFIG # Fallback to default
+
+config_toml_handler(config_file)
 
 _cfg = tomllib.loads(config_file.read_text(encoding="utf-8"))
 
