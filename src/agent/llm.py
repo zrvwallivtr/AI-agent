@@ -34,6 +34,7 @@ class LLM:
 
     @staticmethod
     def model_response(messages: list[dict], model: str) -> tuple[str, int, int]:
+        """Response using specified model, streams output."""
         response        = ""
         prompt_tokens   = 0
         output_tokens   = 0
@@ -41,17 +42,22 @@ class LLM:
         # Send message to the model
         stream = ollama.chat(model=model, messages=messages, stream=True)
 
-        # Stream model output
-        for chunk in stream:
-            token = chunk.message.content
-            print(token, end="", flush=True)
-            response += token
+        # Stream model output in markdown
+        with Live(
+            Markdown(response),
+            console=console,
+            refresh_per_second=11,
+            vertical_overflow="visible"
+        ) as live:
+            for chunk in stream:
+                token = chunk.message.content
+                response += token
+                live.update(Markdown(response))
 
-            # Get token count when done
-            if chunk.done:
-                prompt_tokens = chunk.prompt_eval_count or 0
-                output_tokens = chunk.eval_count or 0
-        print("\n")
+                # Get token count when done
+                if chunk.done:
+                    prompt_tokens = chunk.prompt_eval_count or 0
+                    output_tokens = chunk.eval_count or 0
 
         return response, prompt_tokens, output_tokens
 

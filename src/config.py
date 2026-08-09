@@ -188,6 +188,11 @@ SYS_PROMPT_DIR              = PROMPT_DIR / "system"
 CUS_SYS_PROMPT_DIR          = CUS_PROMPT_DIR / "system"
 SYS_PROMPT_PATH, SYS_PROMPT = _prioritise_custom_prompt("standard", CUS_SYS_PROMPT_DIR, SYS_PROMPT_DIR)
 
+# Compression
+COMPRESS_PROMPT_DIR                     = PROMPT_DIR / "chat_compression"
+CUS_COMPRESS_PROMPT_DIR                 = CUS_PROMPT_DIR / "chat_compression"
+COMPRESS_PROMPT_PATH, COMPRESS_PROMPT   = _prioritise_custom_prompt("instructions", CUS_COMPRESS_PROMPT_DIR, COMPRESS_PROMPT_DIR)
+
 # Memory
 MEM_PROMPT_DIR                              = PROMPT_DIR / "memory"
 CUS_MEM_PROMPT_DIR                          = CUS_PROMPT_DIR / "memory"

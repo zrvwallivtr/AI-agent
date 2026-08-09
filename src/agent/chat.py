@@ -23,6 +23,7 @@ class Chat:
         self.active_conv_path, self.chat_history_path   = _session_path(session)
         self.prompt                                     = config.SYS_PROMPT
         self._messages                                  = self._load_chat()
+        self.compression_prompt                         = config.COMPRESS_PROMPT
 
     def _load_chat(self) -> list[dict]:
         """Fetch/Start messages in a session."""
@@ -71,24 +72,24 @@ class Chat:
         2. Chat history -> 'self.chat_history_path'
         """
         # Active conversation:
-        #
         # - Purpose: Read by the MODEL.
-        # - Writes messages stored in 'self._messages'.
+        # - Overwrites entire file with messages stored
+        #   in 'self._messages'.
         #
         # Note: File can still be created with no questions asked.
         self.active_conv_path.parent.mkdir(parents=True, exist_ok=True)
         self.active_conv_path.write_text(json.dumps(self._messages, indent=4))
 
         # Chat history:
-        #
-        # - Purpose: Read by the USER.
-        # - Writes messages stored in 'msg'.
+        # - Purpose: Read by the user.
+        # - Append new entry with contents stored in 'msg'.
         #
         # Note: Only called when message is present.
         if msg:
             self.chat_history_path.parent.mkdir(parents=True, exist_ok=True)
+
             with open(self.chat_history_path, "a") as f:
-                f.write(json.dumps(msg) + "\n")
+                f.write(json.dumps(msg, indent=4) + "\n")
 
     def clear_active_conv(self) -> str:
         """Deleted conversation file."""
@@ -253,7 +254,9 @@ class Chat:
             "timestamp": timestamp,
             "role": "assistant",
             "content": content,
-            "state": state
+            "state": state,
+            "prompt_tokens": prompt_tokens,
+            "output_tokens": output_tokens
         }
 
         # Tool calls metadata processing
@@ -282,12 +285,12 @@ class Chat:
 
         # Could add token check to ensure the output 
         # summary is under (max_token * 0.1).
-        messages = self.to_llm() + [LLM.user(
-            "Create a concise summary of the conversation above. "
-            "The summary will replace this conversation as context for future messages. "
-            "Include: key topics discussed, conclusions reached, and any important details mentioned. "
-            "Be factual and specific. Do not add any commentary or explanation — output the summary only."
-        )]
+        history = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in self.to_llm()])
+
+        messages = [
+            LLM.system(self.compression_prompt),
+            LLM.user(f"Summarise the following conversation, The summary will replace this conversation as context for future messages.: \n\n{history}")
+        ]
         content, prompt_tokens, output_tokens = LLM.model_response(messages, model)
 
         # If error occurs (model returns nothing or
