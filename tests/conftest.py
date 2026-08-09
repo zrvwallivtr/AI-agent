@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import src.config as config_module
+import src.setup as setup_module
 import src.agent.chat as chat_module
 import src.agent.memory as memory_module
 import src.tools.file_reader as file_reader_module
@@ -171,7 +172,7 @@ def mock_config(monkeypatch: pytest.MonkeyPatch, test_config: TestConfig):
     def _config_toml_handler(config_file: Path):
         return None
 
-    monkeypatch.setattr(config_module, "config_toml_handler", _config_toml_handler)
+    monkeypatch.setattr(setup_module, "config_toml_handler", _config_toml_handler)
 
     monkeypatch.setattr(config_module, "_cfg", test_config._cfg)
 
