@@ -97,6 +97,7 @@ QUERY_PROMPT_PATH, QUERY_PROMPT                 = setup.prioritise_custom_prompt
 # File reader
 FILE_READER_PROMPT_DIR                          = PROMPT_DIR / "file_reader"
 CUS_FILE_READER_PROMPT_DIR                      = CUS_PROMPT_DIR / "file_reader"
+GEN_SUMMARY_PROMPT_PATH, GEN_SUMMARY_PROMPT     = setup.prioritise_custom_prompt("generate_summary", config_file, CUS_FILE_READER_PROMPT_DIR, FILE_READER_PROMPT_DIR)
 FILE_OR_NOT_PROMPT_PATH, FILE_OR_NOT_PROMPT     = setup.prioritise_custom_prompt("file_or_not", config_file, CUS_FILE_READER_PROMPT_DIR, FILE_READER_PROMPT_DIR)
 GET_FILE_LIST_PROMPT_PATH, GET_FILE_LIST_PROMPT = setup.prioritise_custom_prompt("get_file_list", config_file, CUS_FILE_READER_PROMPT_DIR, FILE_READER_PROMPT_DIR)
 

@@ -243,10 +243,10 @@ class Agent:
     # ===================================
 
     def _file_context(
-            self,
-            context: list[dict],
-            prompt: str
-        ) -> tuple[list[str], list[str]] | None:
+        self,
+        context: list[dict],
+        prompt: str
+    ) -> tuple[list[str], list[str]] | None:
         """
         Model decides to read which previously uploaded files.
 
@@ -280,17 +280,17 @@ class Agent:
         query_with_urls: list[dict[str, list[str]]],
         search: bool,
 
-        list_of_files: list[str] | None,
+        filename_list: list[str] | None,
 
         prompt: str
     ):
-        """If memory entries are given model reads the list of files and response, else skip."""
+        """If memory entries are given model, reads the list of files and response, else skip."""
         combined_prompt = f"{memory_entries}\n{file_contents}\n{search_results}\nUser input:\n{prompt}"
 
         answer, prompt_tokens, output_tokens = self.file_reader.read_files_with_context_prompt(
             context=messages,
             context_prompt=combined_prompt,
-            list_of_files=list_of_files,
+            filename_list=filename_list,
             prompt=combined_prompt
         )
 
@@ -298,7 +298,7 @@ class Agent:
         self.chat.append_user_message_with_metadata(
             content=prompt,
             state="external",
-            attachments=list_of_files
+            attachments=filename_list
         )
 
         # Save assistant message
@@ -322,7 +322,7 @@ class Agent:
         auto_web_search: bool = True,
         auto_read_dropbox: bool = True,
         extra_context: bool = False,
-        list_of_files: list[str] | None = None
+        filename_list: list[str] | None = None
     ) -> None | str:
         """
         Model decide what memories to read.
@@ -446,7 +446,7 @@ class Agent:
                 query_with_urls=query_with_urls,
                 search=search,
 
-                list_of_files=list_of_files,
+                filename_list=filename_list,
                 prompt=prompt
             )
 

@@ -13,7 +13,7 @@ Features
 - **Automated token compression:** automatically summarises older conversations when token counts reaches certain threshold to prevent context-window crashes.
 - **Multi-session support:** Switch between separate chat sessions.
 
-### Long-Term Memory (ChromaDB integration):
+### Long-Term Memory (ChromaDB integration)
 
 The agent automatically fetches relevant contextual memories using an embedding model. Manually interface with its memory is also supported using commands:
 
@@ -21,44 +21,25 @@ The agent automatically fetches relevant contextual memories using an embedding 
 - `/memorise <prompt>` - Instruct agent to extract and save specified context to the database.
 - `/recall <prompt>` - Searches and retrieves matches from database.
 
-### Extensible Tooling:
+### Document processing
 
-- **Document processing:** Converts different file formats content into clean plaintext context strings to append into the active chat session.
-    - **Officially supported formats**:
-        **Plain text**
-        - .txt
+Converts different file formats content into clean plaintext context strings to append into the active chat session.
 
-        **Data & configuration formats**
-        - .csv
-        - .xlsx
-        - .yaml
-        - .yml
-        - .toml
-        - .xml
+**Officially supported formats**
+- **Plain text:** `.txt`
+- **Data & configuration formats:** `.csv`, `.xlsx`, `.yaml`, `.yml`, `.toml`, `.xml`
+- **Text documents:** `.pdf`, `.docx`, `.epub`
+- **Programming:** `.py`, `.js`, `.ts`, `.tsx`, `.json`, `.md`, `.sh`, `.html`, `.css`, `.rs`, `.go`
 
-        **Text documents**
-        - .pdf
-        - .docx
-        - .epub
+- Any other formats that are not on the list will be fallback to be read as plain text.
 
-        **Programming**
-        - .py
-        - .js
-        - .ts
-        - .tsx
-        - .json
-        - .md
-        - .sh
-        - .html
-        - .css
-        - .rs
-        - .go
+### Web search
 
-    - Any other formats that are not on the list will be fallback to be read as plain text.
+Queries local or remote search engines.
 
-- **Web search:** Queries local or remote search engines.
-    - Safely dumps all search results into a temporary `.json` file for model to read.
-    - Generates an accurate answer based on the search results and user prompt, ensuring only the finalized answer enters chat log.
+- `/search <prompt>` to enable ability.
+- Safely dumps all search results into a temporary `.json` file for model to read.
+- Generates an accurate answer based on the search results and user prompt, ensuring only the finalized answer enters chat log.
 
 ### Configuration
 
@@ -84,16 +65,21 @@ project_manager = "project_manager"
 ```
 
 ### Storage
-All data stores in `data/`:
+
+All data stores in `~/.agent_app`:
 
 ```
-data
-├──settings                         (All agent settings and configs)
-├──chat                             (All session history)
-│  ├──chat.json
-│  ├──chat_history.json
-│  ├──custom.json
-│  └──custom_chat_history.json
-├──chroma                           (Chroma vector data)
-└──dropbox                          (All user uploads)
+~/.agent_app
+├── config.toml
+└── data
+    ├── chats                           (All session history)
+    │   ├── chat.json
+    │   ├── chat_history.json
+    │   ├── custom.json
+    │   └── custom_chat_history.json
+    ├── chroma                          (Chroma vector data)
+    │   └── chroma.sqlite3
+    ├── dropbox                         (All user uploads)
+    ├── projects
+    └── prompts
 ```

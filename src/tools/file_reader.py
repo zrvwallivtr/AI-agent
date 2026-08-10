@@ -1,15 +1,18 @@
 import os
+from os.path import exists
 import re
-from typing import Optional
+import json
 import pdfplumber
-from pathlib import Path
 import openpyxl
 import docx
 import ebooklib
+import mimetypes
+import warnings
+from typing import Optional
+from pathlib import Path
 from ebooklib import epub
 from bs4 import BeautifulSoup
-import warnings
-
+from typing import Any
 
 from src.agent.llm import LLM
 from src.agent.chat import Chat
@@ -21,25 +24,37 @@ def _session_path(session: str | None = None) -> Path:
         return config.DROPBOX_DIR / session
     return config.DROPBOX_DIR / "chat"
 
-def _read_file_in_dropbox(path) -> str:
-    """Read file contents in dropbox."""
-    with open(path, "r") as f:
-        content = f.read()
-    return content
-
 def _is_dir_empty(path: Path) -> bool:
     """Return True if directory is not empty, otherwise 'False'."""
+    if not path.exists():
+        return False
     with os.scandir(path) as entries:
         return next(entries, None) is not None
 
+def _read_file(path) -> str:
+    """Return content in file path."""
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        content = f.read()
+    return content
+
 
 class FileReader:
-    def __init__(self, session: str | None = None):
+    def __init__(
+        self,
+        session: str | None = None,
+    ):
+        self.chat               = Chat(session=session)
         self.model              = config.MODEL
+
+        # Files
+        self.dropbox_dir        = _session_path(session)
         self.file_or_not_prompt = config.FILE_OR_NOT_PROMPT
         self.file_list_prompt   = config.GET_FILE_LIST_PROMPT
-        self.chat               = Chat(session=session)
-        self.store_file_path    = _session_path(session)
+        
+        # Dropbox
+        self.metadata_path      = _session_path(session) / "file_metadata.json"
+        self.file_metadata      = self._load_file_metadata()
+        self.gen_summary_prompt = config.GEN_SUMMARY_PROMPT
 
         # Map formats to their parsing methods
         self.formats = {
@@ -181,66 +196,158 @@ class FileReader:
 
         return f"```{lang}\n{content}\n```"
 
-    # ==================================================
-    # Storage uploaded files in dropbox
-    # ==================================================
-    
-    # add a short summary for every file in dropbox
-    def _store_content_in_dropbox(self, content: str, filename: str) -> None | str:
+    # ================================================
+    # Metadata (file_metadata.json)
+    # ================================================
+
+    def _load_file_metadata(self) -> dict[str, dict[str, Any]]:
+        """Fetch/create metadata file, returns metadata as dict."""
+        if not self.dropbox_dir.exists():
+            self.dropbox_dir.mkdir(parents=True, exist_ok=True)
+
+        path = self.dropbox_dir / "file_metadata.json"
+
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                return {}
+
+        else:
+            default_data = {}
+            path.write_text(json.dumps(default_data, indent=4), encoding="utf-8")
+            return default_data
+
+    def _add_file_metadata(self, filename: str, summary: str):
+        """
+        Add metadata to 'file_metadata.json'.
+
+        {
+            "filename": {
+                "summary": ,
+                "path": ,
+                "mime_type": ,
+                "size_bytes":
+            }
+        }
+        """
+        path = self.dropbox_dir / filename
+        mime_type, _ = mimetypes.guess_type(path)
+
+        self.file_metadata[path.name] = {
+            "summary": f"{summary}",
+            "path": str(path),
+            "mime_type": mime_type,
+            "size_bytes": path.stat().st_size if path.exists else 0
+        }
+
+        self.dropbox_dir.mkdir(parents=True, exist_ok=True)
+        self.metadata_path.write_text(json.dumps(self.file_metadata, indent=4), encoding="utf-8")
+
+    def _get_filenames_from_metadata(self) -> list[str]:
+        """Return all filenames from 'file_metadata.json'."""
+        if self.metadata_path.exists():
+            try:
+                data = json.loads(self.metadata_path.read_text(encoding="utf-8"))
+                return list(data.keys())
+
+            except json.JSONDecodeError:
+                return []
+
+        return []
+
+    def _files_not_in_file_metadata(self) -> list[str]:
+        """
+        Return a list of available files that is
+        not in 'file_data.json' (without summary).
+        """
+        files_with_summary = self._get_filenames_from_metadata()
+        available_files = self._list_available_files()
+
+        files_without_summary = list(set(available_files) - set(files_with_summary))
+
+        return files_without_summary
+
+    # ================================================
+    # Dropbox files
+    # ================================================
+
+    def _list_available_files(self) -> list[str]:
+        """Return a list of files currently in the directory."""
+        if not self.dropbox_dir.exists():
+            return []
+
+        available_files = []
+
+        for file in self.dropbox_dir.iterdir():
+            if file.is_file() and file.name != "file_metadata.json":
+                available_files.append(file.name)
+
+        return available_files
+
+    def _store_file_in_dropbox(self, content: str, filename: str) -> None | str:
         """Store file contents in the dropbox."""
         try:
-            self.store_file_path.mkdir(parents=True, exist_ok=True)
-            path = self.store_file_path / filename
+            self.dropbox_dir.mkdir(parents=True, exist_ok=True)
+            path = self.dropbox_dir / filename
             path.write_text(content, encoding="utf-8")
 
         except Exception as e:
             return f"Failed to cache context in workspace storage: {e}"
 
-    # list filenames in dropbox along side with the short summary
-    def list_available_files(self) -> list[str]:
-        """Return an index of files currently in the directory."""
-        if not self.store_file_path.exists():
-            return []
-
-        return [f.name for f in self.store_file_path.iterdir () if f.is_file()]
-
     def clear_session_dropbox(self, session: str | None = None) -> str:
         """Remove session dropbox directory when cleaning history."""
-        if self.store_file_path.exists():
-            for child in self.store_file_path.iterdir():
+        if self.dropbox_dir.exists():
+            for child in self.dropbox_dir.iterdir():
                 if child.is_file():
                     child.unlink()
 
-            self.store_file_path.rmdir()
+            self.dropbox_dir.rmdir()
             return f"Cleared all files in session {session}'s dropbox."
 
         return f"Error: Session {session}'s dropbox not found."
 
-    # ==================================================
-    # Load files
-    # ==================================================
 
-    def load_file_contents(self, filenames: list[str]) -> str:
-        """From a list of paths, returns contents in path as a string."""
+    # ================================================
+    # File contents
+    # ================================================
+
+    def _load_file_content(self, filename: str) -> tuple[str, Path, bool]:
+        """Return file content as a string using mapped parsers."""
+        path = self.dropbox_dir / filename
+        ext = path.suffix.lower()
+
+        if not path.exists():
+            return f"Error: File {path} not found.", path, False
+
+        # Route to correct parser, fallback to plain text if unknown
+        parser = self.formats.get(ext, self._read_txt)
+
+        return parser(path), path, True
+
+    def _load_contents_from_file_list(self, filenames: list[str]) -> str:
+        """From a list of filenames, returns contents in path as a string."""
         blocks = []
-        paths = [Path(config.DROPBOX_DIR / filename) for filename in filenames]
 
-        for path in paths:
+        for file in filenames:
 
-            try:
-                content = path.read_text(encoding="utf-8", errors="replace").strip()
+            content, path, path_exists = self._load_file_content(file)
 
-                # Format
-                block = (
-                    f"Context from file:"
-                    f"Filename = {path.name}\n"
-                    f"{content}\n"
-                    "="*40
-                )
-                blocks.append(block)
+            if not path_exists:
+                print(f"Warning: Error reading file {path}, file not found or unreadable, skipping.")
+                continue
 
-            except Exception as e:
-                print(f"Error reading file {path}: {e}")
+            # Format individual file block
+            block = (
+                "Context from file:\n"
+                f"Filename = {file}\n"
+                f"{content}\n"
+                f"{'=' * 40}"
+            )
+            blocks.append(block)
+
+        if not blocks:
+            return "No valid file context found."
 
         return "\n\n".join(blocks)
 
@@ -248,13 +355,47 @@ class FileReader:
     # Model integration
     # ==================================================
 
-    def require_file_or_not(self, context: list[dict], prompt: str) -> bool:
+    def _generate_short_summary(self, filename: str) -> str:
+        """Model generates a short summary about the file content."""
+        content, _, _ = self._load_file_content(filename)
+        formatted_file_content = (
+            f"Context from file:\n"
+            f"Filename = {filename}\n"
+            f"{content}\n"
+        )
+
+        response = LLM.response_with_new_sys_prompt_and_context(
+            model=self.model,
+            system_prompt=self.gen_summary_prompt,
+            prompt=formatted_file_content
+        )
+
+        summary = response.message.content
+
+        return summary
+
+    def _add_metadata_and_summary(self, filenames: list[str]):
+        """Add summary and metadata to files."""
+        for filename in filenames:
+            summary = self._generate_short_summary(filename)
+            self._add_file_metadata(filename, summary)
+
+    def _structured_file_string(self, filename: str, summary: str) -> str:
+        """Format contents for model to read."""
+        string = (
+            f"Filename = {filename}\n"
+            f"Summary = {summary}\n"
+            f"{'=' * 40}\n"
+        )
+        return string
+
+    def _require_file_or_not(self, context: list[dict], prompt: str) -> bool:
         """Query model to decide if file context is needed, return 'True' or 'False' only."""
         response = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
             system_prompt=self.file_or_not_prompt,
-            context=context,
-            prompt=prompt
+            prompt=prompt,
+            context=context
         )
 
         output = response.message.content
@@ -264,13 +405,16 @@ class FileReader:
         else:
             return False
 
-    def get_filenames(self, context: list[dict], prompt: str) -> tuple[list[str], list[str]]:
-        """Ask model to choose from available in current session to get relevant context."""
+    def get_filenames(self, context: list[dict], available_files: str) -> tuple[list[str], list[str]]:
+        """
+        Ask model to choose from available in current session to get relevant context,
+        formats model output to get clean lists of data.
+        """
         response = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
-            system_prompt=self.file_or_not_prompt,
-            context=context,
-            prompt=prompt
+            system_prompt=self.file_list_prompt,
+            prompt=available_files,
+            context=context
         )
 
         list_of_files = response.message.content
@@ -288,7 +432,7 @@ class FileReader:
 
         # Segregate file paths into found and not found
         for file in parsed_names:
-            file_path = self.store_file_path / file
+            file_path = self.dropbox_dir / file
 
             if file_path.exists():
                 found_file_paths.append(file)
@@ -301,24 +445,20 @@ class FileReader:
             self,
             context: list[dict],
             context_prompt: str,
-            list_of_files: list[str] | None,
+            filename_list: list[str] | None,
             prompt: str
     ) -> tuple[str, int, int]:
         """Read all files contents from a list of filenames."""
         labelled_content = ["Here are the required context:\n"]
 
-        if list_of_files:
+        if filename_list:
 
-            for filename in list_of_files:
-                path    = Path(self.store_file_path / filename)
-                ext     = path.suffix.lower()
+            for filename in filename_list:
 
-                if not path.exists():
+                file_content, path, path_exists = self._load_file_content(filename)
+
+                if not path_exists:
                     return f"Error: File {path} not found.", 0, 0
-
-                # Route to correct parser, fallback to plain text if unknown
-                parser = self.formats.get(ext, self._read_txt)
-                file_content = parser(path)
 
                 block = (
                     f"Context from file:"
@@ -331,11 +471,42 @@ class FileReader:
         else:
             return "Error: No files provided", 0, 0
 
-        next_message    = LLM.user(f"{context_prompt}\n{labelled_content}\nUser input:\n{prompt}")
+        formatted_context = "\n\n".join(labelled_content)
+        next_message    = LLM.user(f"{context_prompt}\n{formatted_context}\nUser input:\n{prompt}")
         messages        = context + [next_message]
 
         response, prompt_tokens, output_tokens = LLM.model_response(messages, self.model)
         return response, prompt_tokens, output_tokens
+
+    def _file_context(self) -> str:
+        """
+        Steps:
+        1. Add summary and metadata that are not in 'file_metadata.json'.
+        2. List all filenames in dropbox.
+        3. Format filenames and summary to a string for model to read.
+        """
+        # Add summary and metadata if not exists
+        files_without_summary = self._files_not_in_file_metadata()
+        self._add_metadata_and_summary(files_without_summary)
+
+        # Re-sync metadata
+        if hasattr(self, "_load_file_metadata"):
+            self.file_metadata = self._load_file_metadata() or {}
+
+        # List all available files
+        filenames = self._list_available_files()
+
+        # Filenames with its corresponding summary
+        blocks = []
+        for file in filenames:
+            metadata = self.file_metadata.get(file, {})
+            summary = metadata.get("summary", "No summary available")
+
+            blocks.append(self._structured_file_string(file, summary))
+        
+        entries = "\n\n".join(blocks)
+
+        return f"All available files:\n\n{'=' * 40}\n{entries}"
 
     # ==================================================
     # Auto function
@@ -356,14 +527,18 @@ class FileReader:
         if auto_read_dropbox == True and max_tokens > config.AUTO_READ_DROPBOX_TOKENS:
 
             # Check if dropbox is empty
-            content_exists = _is_dir_empty(config.DROPBOX_DIR)
+            if _is_dir_empty(self.dropbox_dir):
+                return "", [], False
             
-            require_file = self.require_file_or_not(messages, prompt)
+            require_file = self._require_file_or_not(messages, prompt)
 
             if require_file == True:
-                found_files, not_found_files = self.get_filenames(messages, prompt)
 
-                return self.load_file_contents(found_files), found_files, True
+                available_files = self._file_context()
+
+                found_files, not_found_files = self.get_filenames(messages, available_files)
+
+                return self._load_contents_from_file_list(found_files), found_files, True
 
             return "", [], False
 

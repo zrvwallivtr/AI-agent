@@ -65,14 +65,17 @@ class LLM:
     def response_with_new_sys_prompt_and_context(
         model: str,
         system_prompt: str,
-        context: list[dict],
-        prompt: str
+        prompt: str,
+        context: list[dict] | None = None
     ) -> ollama.ChatResponse:
         """Combines a system prompt, context and question with model response."""
-        formatted_question              = f"User input:\n{prompt}"
-        context_without_system_prompt   = [msg for msg in context if msg["role"] != "system"]
+        if context:
+            formatted_question              = f"User input:\n{prompt}"
+            context_without_system_prompt   = [msg for msg in context if msg["role"] != "system"]
 
-        messages                        = [LLM.system(system_prompt)] + context_without_system_prompt + [LLM.user(formatted_question)]
+            messages                        = [LLM.system(system_prompt)] + context_without_system_prompt + [LLM.user(formatted_question)]
+
+        else:
+            messages = [LLM.system(system_prompt)] + [LLM.user(prompt)]
 
         return ollama.chat(model=model, messages=messages)
-

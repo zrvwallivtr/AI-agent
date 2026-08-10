@@ -29,7 +29,7 @@ class Chat:
         """Fetch/Start messages in a session."""
         if self.active_conv_path.exists():
             # Load the entire conversation
-            messages = json.loads(self.active_conv_path.read_text())
+            messages = json.loads(self.active_conv_path.read_text(encoding="utf-8"))
 
             # Update system prompt if it was changed 
             if messages and messages[0]["role"] == "system":
