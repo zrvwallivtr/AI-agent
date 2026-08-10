@@ -20,6 +20,7 @@ def _session_path(session: str | None = None) -> tuple[Path, Path]:
 
 class Chat:
     def __init__(self, session: str | None = None):
+        self.session                                    = session
         self.active_conv_path, self.chat_history_path   = _session_path(session)
         self.prompt                                     = config.SYS_PROMPT
         self._messages                                  = self._load_chat()
@@ -111,7 +112,7 @@ class Chat:
     # Metadata
     # ========================================================
 
-    def _attachments_metadata(self, attachments: list[str] | None) -> dict[str, dict[str, Any]]:
+    def _attachments_metadata(self, attachments: list[Path] | None) -> dict[str, dict[str, Any]]:
         """
         Add metadata to every filename in the list of filenames.
 
@@ -127,12 +128,12 @@ class Chat:
             attachment_dict = {}
 
             for attachment in attachments:
-                path = Path(config.DROPBOX_DIR) / attachment
-                mime_type, _ = mimetypes.guess_type(path)
+
+                mime_type, _ = mimetypes.guess_type(attachment)
                 
-                attachment_dict[path.name] = {
+                attachment_dict[attachment.name] = {
                     "mime_type": mime_type,
-                    "size_bytes": path.stat().st_size if path.exists else 0
+                    "size_bytes": attachment.stat().st_size if attachment.exists else 0
                 }
 
             return attachment_dict
@@ -165,7 +166,7 @@ class Chat:
     def _tool_calls_metadata(
         self,
         msg: dict[str, Any],
-        attachments: list[str] | None = None,
+        attachments: list[Path] | None = None,
         read_dropbox: bool = False,
         queries_with_urls: list[dict[str, list[str]]] | None = None,
         search: bool = False
@@ -205,7 +206,7 @@ class Chat:
         self,
         content: str,
         state: Literal["internal", "external"],
-        attachments: list[str] | None = None,
+        attachments: list[Path] | None = None,
     ):
         """
         State:
@@ -233,7 +234,7 @@ class Chat:
         content: str,
         state: Literal["internal", "external"],
 
-        attachments: list[str] | None = None,
+        attachments: list[Path] | None = None,
         read_dropbox: bool = False,
 
         query_with_urls: list[dict[str, list[str]]] | None = None,

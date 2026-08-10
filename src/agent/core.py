@@ -242,63 +242,46 @@ class Agent:
     # Extra context
     # ===================================
 
-    def _file_context(
-        self,
-        context: list[dict],
-        prompt: str
-    ) -> tuple[list[str], list[str]] | None:
-        """
-        Model decides to read which previously uploaded files.
-
-        Steps:
-        1. Requires model as controller to return 'True' or 'False' to read file.
-        2. If 'True', model return list of filenames available in that session.
-        3. Model choose which file(s) to read, return filename(s).
-        """
-        output = self.file_reader.require_file_or_not(context, prompt)
-
-        # Model decide to read files
-        if output == True:
-            found_files, not_found_files = self.file_reader.get_filenames(context, prompt)
-
-        # Model decide not to read files
-        else:
-            return
-
-        return found_files, not_found_files
-
     def _add_extra_context(
         self,
         messages: list[dict],
         memory_entries: str,
 
         file_contents: str,
-        dropbox_files: list[str],
+        dropbox_files: list[Path],
         read_dropbox: bool,
 
         search_results: str,
         query_with_urls: list[dict[str, list[str]]],
         search: bool,
 
-        filename_list: list[str] | None,
+        file_paths: list[Path] | None,
 
         prompt: str
     ):
         """If memory entries are given model, reads the list of files and response, else skip."""
-        combined_prompt = f"{memory_entries}\n{file_contents}\n{search_results}\nUser input:\n{prompt}"
-
-        answer, prompt_tokens, output_tokens = self.file_reader.read_files_with_context_prompt(
+        added_file_contents = self.file_reader.read_files_with_context_prompt(
             context=messages,
-            context_prompt=combined_prompt,
-            filename_list=filename_list,
-            prompt=combined_prompt
+            file_paths=file_paths,
         )
+
+        # Store file into dropbox
+        for path in file_paths:
+            content, _ = self.file_reader.load_file_content(path)
+            self.file_reader.store_file_in_dropbox(content, path)
+
+        messages.append({
+            "role": "user",
+            "content": f"{memory_entries}\n{file_contents}\n{search_results}\n{added_file_contents}User input:\n{prompt}"
+        })
+
+        answer, prompt_tokens, output_tokens = LLM.model_response(messages, self.model)
 
         # Save user message
         self.chat.append_user_message_with_metadata(
             content=prompt,
             state="external",
-            attachments=filename_list
+            attachments=file_paths
         )
 
         # Save assistant message
@@ -311,6 +294,11 @@ class Agent:
             output_tokens=output_tokens
         )
 
+        # Update dropbox metadata
+        print("Updataing dropbox metadata...")
+        self.file_reader._add_metadata_and_summary(file_paths)
+
+
     # ===================================
     # Execution
     # ===================================
@@ -322,7 +310,7 @@ class Agent:
         auto_web_search: bool = True,
         auto_read_dropbox: bool = True,
         extra_context: bool = False,
-        filename_list: list[str] | None = None
+        file_paths: list[Path] | None = None
     ) -> None | str:
         """
         Model decide what memories to read.
@@ -446,7 +434,7 @@ class Agent:
                 query_with_urls=query_with_urls,
                 search=search,
 
-                filename_list=filename_list,
+                file_paths=file_paths,
                 prompt=prompt
             )
 

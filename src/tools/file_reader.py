@@ -19,7 +19,7 @@ from src.agent.chat import Chat
 from src import config
 
 
-def _session_path(session: str | None = None) -> Path:
+def session_path(session: str | None = None) -> Path:
     if session is not None:
         return config.DROPBOX_DIR / session
     return config.DROPBOX_DIR / "chat"
@@ -47,12 +47,12 @@ class FileReader:
         self.model              = config.MODEL
 
         # Files
-        self.dropbox_dir        = _session_path(session)
+        self.dropbox_dir        = session_path(session)
         self.file_or_not_prompt = config.FILE_OR_NOT_PROMPT
         self.file_list_prompt   = config.GET_FILE_LIST_PROMPT
         
         # Dropbox
-        self.metadata_path      = _session_path(session) / "file_metadata.json"
+        self.metadata_path      = session_path(session) / "file_metadata.json"
         self.file_metadata      = self._load_file_metadata()
         self.gen_summary_prompt = config.GEN_SUMMARY_PROMPT
 
@@ -269,17 +269,17 @@ class FileReader:
         not in 'file_data.json' (without summary).
         """
         files_with_summary = self._get_filenames_from_metadata()
-        available_files = self._list_available_files()
+        available_files = self.list_available_files()
 
         files_without_summary = list(set(available_files) - set(files_with_summary))
 
         return files_without_summary
 
     # ================================================
-    # Dropbox files
+    # Dropbox management
     # ================================================
 
-    def _list_available_files(self) -> list[str]:
+    def list_available_files(self) -> list[str]:
         """Return a list of files currently in the directory."""
         if not self.dropbox_dir.exists():
             return []
@@ -292,11 +292,12 @@ class FileReader:
 
         return available_files
 
-    def _store_file_in_dropbox(self, content: str, filename: str) -> str:
+    def store_file_in_dropbox(self, content: str, file_path: Path) -> str:
         """Store file contents in the dropbox."""
+        # Add line to manage same filename error
         try:
             self.dropbox_dir.mkdir(parents=True, exist_ok=True)
-            path = self.dropbox_dir / filename
+            path = self.dropbox_dir / file_path.name
             path.write_text(content, encoding="utf-8")
 
             return ""
@@ -321,26 +322,26 @@ class FileReader:
     # File contents
     # ================================================
 
-    def _load_file_content(self, filename: str) -> tuple[str, Path, bool]:
+    def load_file_content(self, file_path: Path) -> tuple[str, bool]:
         """Return file content as a string using mapped parsers."""
-        path = self.dropbox_dir / filename
-        ext = path.suffix.lower()
+        ext = file_path.suffix.lower()
 
-        if not path.exists():
-            return f"Error: File {path} not found.", path, False
+        if not file_path.exists():
+            return f"Error: File {file_path} not found.", False
 
         # Route to correct parser, fallback to plain text if unknown
         parser = self.formats.get(ext, self._read_txt)
 
-        return parser(path), path, True
+        return parser(file_path), True
 
-    def _load_contents_from_file_list(self, filenames: list[str]) -> str:
+    def _load_contents_from_file_list(self, file_paths: list[Path]) -> str:
         """From a list of filenames, returns contents in path as a string."""
         blocks = []
 
-        for file in filenames:
+        for path in file_paths:
 
-            content, path, path_exists = self._load_file_content(file)
+            filename = path.name
+            content, path_exists = self.load_file_content(path)
 
             if not path_exists:
                 print(f"Warning: Error reading file {path}, file not found or unreadable, skipping.")
@@ -349,7 +350,7 @@ class FileReader:
             # Format individual file block
             block = (
                 "Context from file:\n"
-                f"Filename = {file}\n"
+                f"Filename = {filename}\n"
                 f"{content}\n"
                 f"{'=' * 40}"
             )
@@ -364,9 +365,11 @@ class FileReader:
     # Model integration
     # ==================================================
 
-    def _generate_short_summary(self, filename: str) -> str:
+    def _generate_short_summary(self, file_path: Path) -> str:
         """Model generates a short summary about the file content."""
-        content, _, _ = self._load_file_content(filename)
+        filename = file_path.name
+        content, _ = self.load_file_content(file_path)
+
         formatted_file_content = (
             f"Context from file:\n"
             f"Filename = {filename}\n"
@@ -383,10 +386,11 @@ class FileReader:
 
         return summary
 
-    def _add_metadata_and_summary(self, filenames: list[str]):
+    def _add_metadata_and_summary(self, file_paths: list[Path]):
         """Add summary and metadata to files."""
-        for filename in filenames:
-            summary = self._generate_short_summary(filename)
+        for path in file_paths:
+            filename = path.name
+            summary = self._generate_short_summary(path)
             self._add_file_metadata(filename, summary)
 
     def _structured_file_string(self, filename: str, summary: str) -> str:
@@ -398,7 +402,7 @@ class FileReader:
         )
         return string
 
-    def _require_file_or_not(self, context: list[dict], prompt: str) -> bool:
+    def require_file_or_not(self, context: list[dict], prompt: str) -> bool:
         """Query model to decide if file context is needed, return 'True' or 'False' only."""
         response = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
@@ -414,7 +418,7 @@ class FileReader:
         else:
             return False
 
-    def get_filenames(self, context: list[dict], available_files: str) -> tuple[list[str], list[str]]:
+    def get_filenames(self, context: list[dict], available_files_prompt: str) -> tuple[list[Path], list[Path]]:
         """
         Ask model to choose from available in current session to get relevant context,
         formats model output to get clean lists of data.
@@ -422,7 +426,7 @@ class FileReader:
         response = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
             system_prompt=self.file_list_prompt,
-            prompt=available_files,
+            prompt=available_files_prompt,
             context=context
         )
 
@@ -450,42 +454,6 @@ class FileReader:
 
         return found_file_paths, not_found_file_paths
 
-    def read_files_with_context_prompt(
-            self,
-            context: list[dict],
-            context_prompt: str,
-            filename_list: list[str] | None,
-            prompt: str
-    ) -> tuple[str, int, int]:
-        """Read all files contents from a list of filenames."""
-        labelled_content = ["Here are the required context:\n"]
-
-        if filename_list:
-
-            for filename in filename_list:
-
-                file_content, path, path_exists = self._load_file_content(filename)
-
-                if not path_exists:
-                    return f"Error: File {path} not found.", 0, 0
-
-                block = (
-                    f"Context from file:"
-                    f"Filename = {filename}\n"
-                    f"{file_content}\n"
-                    "="*40
-                )
-                labelled_content.append(block)
-
-        else:
-            return "Error: No files provided", 0, 0
-
-        formatted_context = "\n\n".join(labelled_content)
-        next_message    = LLM.user(f"{context_prompt}\n{formatted_context}\nUser input:\n{prompt}")
-        messages        = context + [next_message]
-
-        response, prompt_tokens, output_tokens = LLM.model_response(messages, self.model)
-        return response, prompt_tokens, output_tokens
 
     def _file_context(self) -> str:
         """
@@ -496,14 +464,15 @@ class FileReader:
         """
         # Add summary and metadata if not exists
         files_without_summary = self._files_not_in_file_metadata()
-        self._add_metadata_and_summary(files_without_summary)
+        file_paths = [self.dropbox_dir / file for file in files_without_summary]
+        self._add_metadata_and_summary(file_paths)
 
         # Re-sync metadata
         if hasattr(self, "_load_file_metadata"):
             self.file_metadata = self._load_file_metadata() or {}
 
         # List all available files
-        filenames = self._list_available_files()
+        filenames = self.list_available_files()
 
         # Filenames with its corresponding summary
         blocks = []
@@ -527,7 +496,7 @@ class FileReader:
             auto_read_dropbox: bool,
             messages: list[dict],
             prompt: str
-    ) -> tuple[str, list[str], bool]:
+    ) -> tuple[str, list[Path], bool]:
         """
         Auto fetches previous file contents ability, return relevant files if its toggled on.
 
@@ -539,17 +508,55 @@ class FileReader:
             if _is_dir_empty(self.dropbox_dir):
                 return "", [], False
             
-            require_file = self._require_file_or_not(messages, prompt)
+            require_file = self.require_file_or_not(messages, prompt)
 
             if require_file == True:
 
-                available_files = self._file_context()
+                available_files_prompt = self._file_context()
 
-                found_files, not_found_files = self.get_filenames(messages, available_files)
+                found_files, not_found_files = self.get_filenames(messages, available_files_prompt)
 
-                return self._load_contents_from_file_list(found_files), found_files, True
+                # turn found_files to paths
+                found_file_paths = [self.dropbox_dir / file for file in found_files]
+                return self._load_contents_from_file_list(found_file_paths), found_files, True
 
             return "", [], False
 
         else:
             return "", [], False
+
+
+    # ==================================================
+    # Manual read files with given paths
+    # ==================================================
+
+    def read_files_with_context_prompt(
+            self,
+            context: list[dict],
+            file_paths: list[Path] | None,
+    ) -> str:
+        """Read all files contents from a list of filenames."""
+        labelled_content = ["Here are the required context:\n"]
+
+        if file_paths:
+
+            for path in file_paths:
+
+                filename = path.name
+                file_content, path_exists = self.load_file_content(path)
+
+                if not path_exists:
+                    return ""
+
+                block = (
+                    f"Context from file:"
+                    f"Filename = {filename}\n"
+                    f"{file_content}\n"
+                    f"{'=' * 40}"
+                )
+                labelled_content.append(block)
+
+        else:
+            return ""
+
+        return "\n\n".join(labelled_content)

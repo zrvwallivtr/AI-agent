@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 from src.agent.core import Agent
 from src.agent.memory import Memory
@@ -8,7 +9,8 @@ from src.tools.file_reader import FileReader
 from src.tools.project_manager import ProjectManager
 from src.tools.search import SearchAgent
 
-from src.cli.flag_functions import General, Session
+from src.cli.flag_functions import General, Session, File
+from tools import file_reader
 
 
 def main():
@@ -27,7 +29,8 @@ def main():
     parser.add_argument("--delete-session", "-d",   default=None,           metavar=("SESSION_NAME"),                   help="Delete a selected session")
 
     # Read files
-    parser.add_argument("--read", "-r",     default=None,       help="Read selected file")
+    parser.add_argument("--file", "-f",         nargs="+",      type=Path,     default=None,    metavar=("FILE_PATH"),      help="Read selected file")
+    parser.add_argument("--list-files", "-lf",   action="store_true",                                                        help="List all files in dropbox")
 
     # Project manager
     parser.add_argument("--project-summary", "-ps",     nargs=3,        metavar=("PROJECT_NAME", "SESSION_NAME", "TEXT"),       help="Edit project tasklist")
@@ -38,8 +41,10 @@ def main():
 
     args = parser.parse_args()
 
-    agent   = Agent(model=args.model, session=args.session)
-    session = Session(args.session)
+    agent       = Agent(model=args.model, session=args.session)
+    session     = Session(args.session)
+    file        = File(args.session)
+    file_reader = FileReader(args.session)
 
     # =================================================================
     # Delete
@@ -73,9 +78,22 @@ def main():
     # =================================================================
     # Read
     # =================================================================
-    if args.read and not args.question:
-        print("Error: question required")
-        return
+    if args.file:
+        if not args.question:
+            print("Error: question required")
+            return
+
+        if args.file:
+            file.files_with_prompt(
+                model=args.model,
+                prompt=args.question,
+                file_paths=args.file,
+                #project=args.project
+            )
+            return
+
+    if args.list_files:
+        file_reader.list_available_files()
 
     # =================================================================
     # Project
@@ -118,7 +136,7 @@ def main():
     # =================================================================
     # Help
     # =================================================================
-    action_flags = [args.read]
+    action_flags = [args.file]
 
     if not args.question and not any(action_flags):
         parser.print_help()

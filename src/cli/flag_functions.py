@@ -7,14 +7,6 @@ from src.agent.core import Agent
 from src.tools.file_reader import FileReader
 
 
-# --------------------------------------------------------
-# General class
-#
-# Main tools:
-# - call Agent to answer question
-# - delete default chat file in DEFAULT_PATH
-# --------------------------------------------------------
-
 def _delete_session_files(session: str | None = None):
     """
     Delete session related files. If 'session'
@@ -33,17 +25,26 @@ def _delete_session_files(session: str | None = None):
     print(clear_chat_history_response)
 
     # Clear all files in dropbox
-    clear_session_dropbox_response  = file_reader.clear_session_dropbox(session)
+    clear_session_dropbox_response  = file_reader.clear_session_dropbox()
     print(clear_session_dropbox_response)
     
 
 # =========================================================
 # General
+#
+# Main tools:
+# - call Agent to answer question
+# - delete default chat file in DEFAULT_PATH
 # =========================================================
 
 class General:
     @staticmethod
-    def question(model, prompt, session: str | None = None, project: str | None = None):
+    def question(
+        model: str,
+        prompt: str,
+        session: str | None = None,
+        project: str | None = None
+    ):
         """Ask question only, not flags."""
         agent   = Agent(model=model, session=session, project=project)
         answer  = agent.ask(prompt=prompt)
@@ -63,13 +64,13 @@ class General:
             print(f"- {model['model']}")
 
 
-# --------------------------------------------------------
+# =========================================================
 # Session class
 #
 # Main tools:
 # - call Agent to answer question
 # - delete default chat file in DEFAULT_PATH
-# --------------------------------------------------------
+# =========================================================
 
 class Session:
     def __init__(self, session: str):
@@ -115,3 +116,29 @@ class Session:
         for sessions in all_sessions:
             print(sessions)
         print("\n")
+
+# =========================================================
+# File class
+#
+#
+# =========================================================
+
+class File:
+    def __init__(self, session: str):
+        self.session = session
+
+    def files_with_prompt(
+        self,
+        model: str,
+        prompt: str,
+        file_paths: list[Path],
+        project: str | None = None
+    ):
+        """Combine contents in file(s) with user prompt."""
+        agent   = Agent(model=model, session=self.session, project=project)
+        answer  = agent.ask(
+            prompt=prompt,
+            extra_context=True,
+            file_paths=file_paths
+        )
+        return
