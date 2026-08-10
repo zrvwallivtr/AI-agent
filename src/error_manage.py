@@ -1,6 +1,7 @@
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
-import sys
+from typing import Any
 
 
 # =================================
@@ -25,7 +26,7 @@ class ErrorManage:
         sys.exit(1)
 
     @staticmethod
-    def check_if_value_is_valid(config_file: Path, field_name: str, value: int | float | None):
+    def check_if_value_is_valid(config_file: Path, field_name: str, value: Any):
         """Check if the value is a number in the field."""
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             print(f"Error in {config_file}:")

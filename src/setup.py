@@ -67,23 +67,25 @@ def config_toml_handler(config_file: Path, default_config: Path):
 # Model selection
 # =================================
 
-def normalise_to_integer(value: Any) -> int | None:
-    """Returns .0 to 'int'."""
-    if value is not None:
-        return int(value)
-    else:
+def _normalise_to_integer(value: Any) -> int | str | None:
+    """Converts valid values to int."""
+    if value is None:
         return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return f"Error: Invalid value '{value}'."
 
 def set_model_tokens(
     _cfg: dict[str, Any],
     config_file: Path,
     field: str,
     field_name: str
-) -> tuple[str, int | None]:
+) -> tuple[str, Any]:
     """Verify if 'model_name' is on the list or specified in 'config.toml'."""
     model               = _cfg["models"][field]
     max_tokens          = _cfg["models"].get(field_name, None)
-    model_max_tokens    = normalise_to_integer(max_tokens)
+    model_max_tokens    = _normalise_to_integer(max_tokens)
 
     if model not in config.MODEL_MAX:
         if model_max_tokens is None:
@@ -97,7 +99,7 @@ def set_model_tokens(
 # Prompts
 # =================================
 
-def prompt_path_handler(
+def _prompt_path_handler(
     filename: str,
     config_file: Path,
     dir: Path
@@ -123,7 +125,7 @@ def prioritise_custom_prompt(
     path = Path(custom_prompt_path)
 
     if path.exists():
-        return prompt_path_handler(filename, config_file, custom_prompt_dir)
+        return _prompt_path_handler(filename, config_file, custom_prompt_dir)
 
-    return prompt_path_handler(filename, config_file, default_prompt_dir)
+    return _prompt_path_handler(filename, config_file, default_prompt_dir)
 
