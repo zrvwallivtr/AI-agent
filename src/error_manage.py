@@ -27,7 +27,7 @@ class ErrorManage:
     @staticmethod
     def check_if_value_is_valid(config_file: Path, field_name: str, value: int | float | None):
         """Check if the value is a number in the field."""
-        if not isinstance(value, (int, float)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
             print(f"Error in {config_file}:")
             print(f"'{field_name}' must be a number, got '{value}' instead.")
             sys.exit(1)
