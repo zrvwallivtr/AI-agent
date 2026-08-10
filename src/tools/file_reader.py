@@ -25,11 +25,11 @@ def _session_path(session: str | None = None) -> Path:
     return config.DROPBOX_DIR / "chat"
 
 def _is_dir_empty(path: Path) -> bool:
-    """Return True if directory is not empty, otherwise 'False'."""
+    """Return True if directory is empty, otherwise 'False'."""
     if not path.exists():
         return False
     with os.scandir(path) as entries:
-        return next(entries, None) is not None
+        return next(entries, None) is None
 
 def _read_file(path) -> str:
     """Return content in file path."""
@@ -234,11 +234,18 @@ class FileReader:
         path = self.dropbox_dir / filename
         mime_type, _ = mimetypes.guess_type(path)
 
+        # Ensure 'file_metadata' is a dictionary
+        if not isinstance(self.file_metadata, dict):
+            raise TypeError(
+                f"Error: Expected 'file_metadata' to be a dict, but got {type(self.file_metadata).__name__}"
+                f"with value: {self.file_metadata!r}"
+            )
+
         self.file_metadata[path.name] = {
             "summary": f"{summary}",
             "path": str(path),
             "mime_type": mime_type,
-            "size_bytes": path.stat().st_size if path.exists else 0
+            "size_bytes": path.stat().st_size if path.exists() else 0
         }
 
         self.dropbox_dir.mkdir(parents=True, exist_ok=True)
@@ -285,17 +292,19 @@ class FileReader:
 
         return available_files
 
-    def _store_file_in_dropbox(self, content: str, filename: str) -> None | str:
+    def _store_file_in_dropbox(self, content: str, filename: str) -> str:
         """Store file contents in the dropbox."""
         try:
             self.dropbox_dir.mkdir(parents=True, exist_ok=True)
             path = self.dropbox_dir / filename
             path.write_text(content, encoding="utf-8")
 
+            return ""
+
         except Exception as e:
             return f"Failed to cache context in workspace storage: {e}"
 
-    def clear_session_dropbox(self, session: str | None = None) -> str:
+    def clear_session_dropbox(self) -> str:
         """Remove session dropbox directory when cleaning history."""
         if self.dropbox_dir.exists():
             for child in self.dropbox_dir.iterdir():
@@ -303,9 +312,9 @@ class FileReader:
                     child.unlink()
 
             self.dropbox_dir.rmdir()
-            return f"Cleared all files in session {session}'s dropbox."
+            return f"Cleared all files in '{self.dropbox_dir}'."
 
-        return f"Error: Session {session}'s dropbox not found."
+        return f"Error: '{self.dropbox_dir}' not found."
 
 
     # ================================================
@@ -526,7 +535,7 @@ class FileReader:
         """
         if auto_read_dropbox == True and max_tokens > config.AUTO_READ_DROPBOX_TOKENS:
 
-            # Check if dropbox is empty
+            # Return nothing if dropbox is empty
             if _is_dir_empty(self.dropbox_dir):
                 return "", [], False
             

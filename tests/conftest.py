@@ -59,7 +59,7 @@ def test_config(tmp_path_factory) -> TestConfig:
     chats_dir       = app_data_dir / "chats"
     chromadb_dir    = app_data_dir / "chroma"
     projects_dir    = app_data_dir / "projects"
-    dropbox_dir     = app_data_dir / "dropbox_dir"
+    dropbox_dir     = app_data_dir / "dropbox"
 
     data_dir.mkdir(parents=True, exist_ok=True)
     app_data_dir.mkdir(parents=True, exist_ok=True)
