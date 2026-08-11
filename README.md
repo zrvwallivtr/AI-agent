@@ -33,7 +33,7 @@ A local Command-Line Interface (CLI) AI assistant featuring ChromaDB long-term m
 * **Automated Session Compression:** Dynamically summarizes older conversations history when context limits are reached, preventing context-window crashes.
 * **Multi-session support:** Create, store and switch between chat sessions.
 
-### Long-Term Memory (ChromaDB integration)
+### Long-Term Memory
 
 The agent automatically retrieves relevant contextual memories using an embedding model. Manual memory management is also available via dedicated slash commands.
 
