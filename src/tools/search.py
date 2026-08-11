@@ -286,7 +286,7 @@ class SearchAgent:
         enable_auto_web_search: bool,
         messages: list[dict],
         prompt: str,
-        memory_entries: str | None
+        memory_entries: str | None = None
     ) -> tuple[str, list[dict[str, list[str]]], bool]:
         """
         Auto web search ability, returns search results if its toggled on.
@@ -296,7 +296,7 @@ class SearchAgent:
         # Check if internet is available
         internet = is_connected()
 
-        if internet == True and enable_auto_web_search == True and model_max_tokens > config.AUTO_WEBSEARCH_TOKENS:
+        if internet == True and enable_auto_web_search == True and model_max_tokens > config.AUTO_WEB_SEARCH_TOKENS:
 
             # Enable auto web search
             search_context = messages

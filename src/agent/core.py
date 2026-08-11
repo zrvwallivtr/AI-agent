@@ -6,6 +6,8 @@ from src.agent.llm import LLM
 from src.agent.tokens_handler import Tokens
 from src.agent.chat import Chat
 from src.agent.memory import Memory
+from src.agent.cmd_functions import Command
+from src.agent.extra_context import ExtraContext
 from src.tools.search import is_connected, SearchAgent
 from src.tools.file_reader import FileReader
 
@@ -51,11 +53,13 @@ class Agent:
             self.tokens = Tokens(model)
 
         self.model          = model  # model is specified in the config file
+        self.project        = project
         self.chat           = Chat(session=session)
         self.memory         = Memory(project=project)
-        self.search_agent   = SearchAgent()
-        self.project        = project
         self.file_reader    = FileReader(session=session)
+        self.command        = Command(model=model, session=session, project=project)
+        self.extra_context  = ExtraContext(model=model, session=session, project=project)
+        self.search_agent   = SearchAgent()
 
     @property
     def get_model_max_tokens(self) -> int:
@@ -104,148 +108,6 @@ class Agent:
             print("Current token exceeds threshold, compressing session...")
             self.chat.compression(self.model)
             print("Compression complete, continue session.")
-
-    # ===================================
-    # Commands
-    # ===================================
-
-    def _cmd_forget(self, prompt: str) -> str:
-        """Find exact match in memory from user prompt and remove said entry."""
-        if not prompt:
-            return "Please specify what to forget."
-
-        match_data = self.memory.get_exact_match(prompt)
-
-        if not match_data:
-            return f"Error: No matching memory found."
-
-        target_id, matched_content = match_data
-
-        print(f"Warning: [ChromaDB] Initializing delte sequence for: '{matched_content}...'")
-        choice = input("Press [Enter] to confirm deletion or type [c] to cancel:")
-
-        if choice == "c":
-            return "Deletion cancelled."
-
-        self.memory.delete_from_db([target_id])
-        return "Entry deleted."
-
-    # /////////////////////////////////////////////////////////
-    # This should be moved after web search and file reader
-    # function to enable full context
-    # /////////////////////////////////////////////////////////
-    def _cmd_memorise(self, prompt: str) -> str:
-        """Extract key info from user prompt and save entries to memory."""
-        if not prompt:
-            return "Please specify what to memorize."
-
-        messages = self.chat.to_llm()
-        messages.append({
-            "role": "user",
-            "content": prompt
-        })
-
-        print(f"Extracting content from user's input...")
-        created_ids, prompt_tokens, output_tokens = self.memory.extract_entries_and_store_to_db(
-            context=messages,
-            prompt=prompt,
-            source="manual",
-        )
-
-        # print exactly the content that is stored
-        saved_entries = self.memory.get_entries_by_ids(created_ids)
-
-        if saved_entries:
-            print("Content saved to database:")
-            for entry in saved_entries:
-                print(f"    - [{entry['category']}] {entry['content']}")
-        else:
-            return "Error: No data was extracted by the model."
-
-        choice = input("Press [Enter] to continue or type [u] to undo:")
-
-        if choice == "u":
-            self.memory.delete_from_db(created_ids)
-            return "Entry deleted."
-
-        # Only save messages if continue
-        confirmation = "Memory saved to database."
-        self.chat.append_user_message_with_metadata(
-            content=prompt,
-            state="external"
-        )
-        self.chat.append_assistant_message_with_metadata(
-            content=confirmation,
-            state="internal",
-            prompt_tokens=prompt_tokens,
-            output_tokens=output_tokens
-        )
-
-        return confirmation
-
-    def _cmd_recall(self, prompt: str) -> str:
-        """Retrieve and print relevant entries accourding to user prompt."""
-        if not prompt:
-            return "Please specify what to recall."
-
-        recalled_entries = self.memory.retrieve_relevant_entry(prompt, limit=4)
-
-        if recalled_entries:
-            recalled = "Found matching entries in long-term memory:\n" + "\n".join(
-                f"- [{entry['category']}] {entry['content']}" for entry in recalled_entries
-            )
-        else:
-            return f"Error: No matching memories found."
-
-        # Save user's question
-        self.chat.append_user_message_with_metadata(
-            content=prompt,
-            state="external"
-        )
-
-        # Add recalled memory to chat (Embedding model: no tokens counts)
-        self.chat.append_assistant_message_with_metadata(
-            content=recalled,
-            state="external"
-        )
-
-        return recalled
-
-    def _cmd_search(self, prompt: str) -> str | None:
-        """Generates, search and answer query based on user prompt."""
-        if not prompt:
-            return "Please specify what to search."
-
-        print("Generating query...")
-        query = self.search_agent.generates_query(
-            context=self.chat.to_llm(),
-            prompt=prompt
-        )
-
-        response, query_with_urls, prompt_tokens, output_tokens, search = self.search_agent.web(
-            query=query,
-            context=self.chat.to_llm(),
-            prompt=prompt,
-            max_results=config.MAX_RESULTS
-        )
-
-        # Save user messages
-        self.chat.append_user_message_with_metadata(
-            content=prompt,
-            state="external"
-        )
-
-        # Save assistant messages
-        self.chat.append_assistant_message_with_metadata(
-            content=response,
-            state="external",
-            query_with_urls=query_with_urls,
-            search=True,
-            prompt_tokens=prompt_tokens,
-            output_tokens=output_tokens
-        )
-
-        return None
 
     # ===================================
     # Extra context
@@ -314,11 +176,11 @@ class Agent:
     def ask(
         self,
         prompt: str,
-        enable_auto_memory_retrieve: bool = True,
-        enable_auto_memory_store: bool = False,
-        enable_auto_web_search: bool = True,
-        enable_auto_read_dropbox: bool = True,
         enable_extra_context: bool = False,
+        enable_auto_memory_retrieve: bool = config.ENABLE_AUTO_MEMORY_RETRIEVE,
+        enable_auto_memory_store: bool = config.ENABLE_AUTO_MEMORY_STORE,
+        enable_auto_web_search: bool = config.ENABLE_AUTO_WEB_SEARCH,
+        enable_auto_read_dropbox: bool = config.ENABLE_AUTO_READ_DROPBOX,
         file_paths: list[Path] | None = None
     ) -> None | str:
         """
@@ -334,26 +196,6 @@ class Agent:
         1. Model decides from {prompt} --> {memory_entries}
         2. Model decides from {memory_entries} + {prompt} --> {file_content} from dropbox
         3. Model decides from {memory_entries} + {file_content} + {prompt} --> {search_results}
-
-        User entry:
-
-        Relevant memory entries:
-        {memory_entries}
-        ========================================
-        Context from file:
-        Filename = {filename}
-        {file_content}
-        ========================================
-        Search results:
-        {search_results}
-        ========================================
-        Here are the required context:
-        Context from file:
-        Filename = {filename}
-        {file_content}
-        ========================================
-        User input:
-        {prompt}
         """
         self._manage_token_budget(prompt)
 
@@ -363,22 +205,18 @@ class Agent:
             # Only use 'user_prompt' as 'prompt' here
 
             if cmd == "/forget":
-                # User's question were not saved
-                response = self._cmd_forget(user_prompt)
+                response = self.command.cmd_forget(user_prompt)
                 if response:
                     print(response)
-
                 # ==============
                 # // End here //
                 # ==============
                 return
 
             if cmd == "/memorise":
-                # User's question were saved
-                response = self._cmd_memorise(user_prompt)
+                response = self.command.cmd_memorise(prompt=user_prompt)
                 if response:
                     print(response)
-
                 # ==============
                 # // End here //
                 # ==============
@@ -386,10 +224,18 @@ class Agent:
 
             if cmd == "/recall":
                 # User's question and agent's response were saved
-                response = self._cmd_recall(user_prompt)
+                response = self.command.cmd_recall(
+                    model_max_tokens=self.get_model_max_tokens,
+                    prompt=user_prompt,
+                    enable_extra_context=enable_extra_context,
+                    enable_auto_memory_retrieve=enable_auto_memory_retrieve,
+                    enable_auto_memory_store=enable_auto_memory_store,
+                    enable_auto_web_search=enable_auto_web_search,
+                    enable_auto_read_dropbox=enable_auto_read_dropbox,
+                    file_paths=file_paths
+                )
                 if response:
                     print(response)
-
                 # ==============
                 # // End here //
                 # ==============
@@ -397,10 +243,15 @@ class Agent:
 
             if cmd == "/search":
                 # User's question were saved
-                response = self._cmd_search(user_prompt)
+                response = self.command.cmd_search(user_prompt)
                 if response:
                     print(response)
 
+                self.memory.toggle_auto_store_memory_entry(
+                    enable_auto_memory_store= True,
+                    model_max_tokens=self.get_model_max_tokens,
+                    context=self.chat.to_llm()
+                )
                 # ==============
                 # // End here //
                 # ==============
@@ -410,7 +261,7 @@ class Agent:
 
         memory_entries = self.memory.toggle_auto_retrive_memory_entry(
             enable_auto_memory_retrieve=enable_auto_memory_retrieve,
-            messages=messages,
+            context=messages,
             prompt=prompt
         )
 
@@ -431,18 +282,15 @@ class Agent:
 
         # Toggle extra_context (read files)
         if enable_extra_context == True:
-            self._add_extra_context(
+            self.extra_context.all(
                 messages=messages,
                 memory_entries=memory_entries,
-
                 file_contents=file_contents,
                 dropbox_files=found_file_paths,
                 read_dropbox=read_dropbox,
-
                 search_results=search_results,
                 query_with_urls=query_with_urls,
                 search=search,
-
                 file_paths=file_paths,
                 prompt=prompt
             )
@@ -452,14 +300,12 @@ class Agent:
             # ==============
             return
 
-        # Combines all context and prompts into one entry and append to messages
+        # Model answer
         messages.append({
             "role": "user",
             "content": f"{memory_entries}\n{file_contents}\n{search_results}\nUser input:\n{prompt}"
         })
-
-        # Model answer
-        answer, prompt_tokens, output_tokens = LLM.model_response(messages, model = self.model)
+        answer, prompt_tokens, output_tokens = LLM.model_response(messages=messages, model = self.model)
 
         # Save messages
         self.chat.append_user_message_with_metadata(
@@ -475,8 +321,6 @@ class Agent:
             output_tokens=output_tokens
         )
         
-        # if enable_auto_memory_store == True:
-        # Add autosave to memory function (Toggle on/off)
         self.memory.toggle_auto_store_memory_entry(
             enable_auto_memory_store= True,
             model_max_tokens=self.get_model_max_tokens,

@@ -170,7 +170,7 @@ class Memory:
         Queries long-term vector storage and adds context
         into user's prompt.
         """
-        memory = self.retrieve_relevant_entry(prompt, limit=2)
+        memory = self.retrieve_relevant_entry(prompt, limit=config.RETRIEVE_MEM_ENTRY_LIMIT)
 
         if memory:
             # Reformat for model readability

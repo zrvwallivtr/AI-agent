@@ -149,7 +149,7 @@ class LLM:
         model: str,
         system_prompt: str,
         context: list[dict]
-    ) -> ollama.ChatResponse:
+    ) -> tuple[str, int, int]:
         """
         Combines a system prompt, context and question with model response,
         the formatting is modified suitable for storing memory functions.
@@ -160,4 +160,9 @@ class LLM:
         formatted_prompt    = f"All previous conversations:\n{trimmed_previous_entries_str}" + f"NEW CONVERSATIONS:\n{last_two_entries_str}"
         messages            = [LLM.system(system_prompt)] + [LLM.user(formatted_prompt)]
 
-        return ollama.chat(model=model, messages=messages)
+        response    = ollama.chat(model=model, messages=messages)
+        content     = response.message.content
+        prompt_tokens = getattr(response, "prompt_eval_cound", 0) or 0
+        output_tokens = getattr(response, "eval_cound", 0) or 0
+
+        return content, prompt_tokens, output_tokens

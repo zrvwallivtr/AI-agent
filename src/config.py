@@ -106,8 +106,10 @@ GET_FILE_LIST_PROMPT_PATH, GET_FILE_LIST_PROMPT = setup.prioritise_custom_prompt
 # Memory
 # ========================================================
 
-RETRIEVE_MEM_ENTRY_LIMIT = _cfg["memory"]["retrieve_entry_limit"]
-AUTO_MEMORY_STORE_TOKENS = _cfg["memory"]["auto_memory_store_enable_at_model_tokens"]
+RETRIEVE_MEM_ENTRY_LIMIT    = _cfg["memory"]["retrieve_entry_limit"]
+AUTO_MEMORY_STORE_TOKENS    = _cfg["memory"]["auto_memory_store_enable_at_model_tokens"]
+ENABLE_AUTO_MEMORY_RETRIEVE = _cfg["memory"]["enable_auto_memory_retrieve"]
+ENABLE_AUTO_MEMORY_STORE    = _cfg["memory"]["enable_auto_memory_store"]
 
 
 # ========================================================
@@ -116,6 +118,7 @@ AUTO_MEMORY_STORE_TOKENS = _cfg["memory"]["auto_memory_store_enable_at_model_tok
 
 # Safeguard before enabling auto read files from dropbox
 AUTO_READ_DROPBOX_TOKENS = _cfg["file_reader"]["auto_read_dropbox_enable_at_model_tokens"]
+ENABLE_AUTO_READ_DROPBOX = _cfg["file_reader"]["enable_auto_read_dropbox"]
 
 
 # ========================================================
@@ -127,7 +130,8 @@ MAX_RESULTS         = _cfg["search"]["max_results"]
 MAX_CHAR_PER_PAGE   = _cfg["search"]["max_char_per_page"]
 
 # Safeguard before enabling auto websearch
-AUTO_WEBSEARCH_TOKENS = _cfg["search"]["auto_web_search_enable_at_model_tokens"]
+AUTO_WEB_SEARCH_TOKENS = _cfg["search"]["auto_web_search_enable_at_model_tokens"]
+ENABLE_AUTO_WEB_SEARCH = _cfg["search"]["enable_auto_web_search"]
 
 
 ErrorManage.url_check(config_file, "engine", SEARCH_ENG)
