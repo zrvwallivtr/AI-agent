@@ -225,7 +225,6 @@ class FileReader:
         {
             "filename": {
                 "summary": ,
-                "path": ,
                 "mime_type": ,
                 "size_bytes":
             }
@@ -241,9 +240,15 @@ class FileReader:
                 f"with value: {self.file_metadata!r}"
             )
 
-        self.file_metadata[path.name] = {
+        # Prevent duplicated filename in the metadata
+        entry_name = path.name
+        counter = 1
+        while entry_name in self.file_metadata:
+            entry_name = f"{path.stem}({counter}){path.suffix}"
+            counter += 1
+
+        self.file_metadata[entry_name] = {
             "summary": f"{summary}",
-            "path": str(path),
             "mime_type": mime_type,
             "size_bytes": path.stat().st_size if path.exists() else 0
         }
