@@ -1,67 +1,105 @@
-Features
---------
+# AI Agent
+
+A local Command-Line Interface (CLI) AI assistant featuring ChromaDB long-term memory, file context injection, local web search and automated token management.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+    - [Core Capabilities](#core-capabilities)
+    - [Context & Chat History](#context--history-management)
+    - [Long-Term Memory](#long-term-memory)
+    - [Document Processing](#document-processing)
+    - [Web Search Integration](#web-search-integraton)
+- [Command Reference](#command-reference)
+- [Configuration](#configuration)
+- [Data Directory Structure](#data-directory-structure)
+- [License](#license)
+
+---
+
+## Features
 
 ### Core Capabilities
 
-- **Markdown terminal output:** All model responses are rendered in markdown format.
-- **CLI flags support:** Built-in command-line arguments.
-- **Data storage:** All user files, sessions and logs are stored in `~/.agent_app/data`.
+* **Markdown Terminal Output:** All model responses are rendered in markdown format.
+* **CLI Flags Support:** Built-in command-line arguments.
+* **Local Data Storage:** User data, session histories, vector stores are kept locally in `~/.agent_app/data`.
 
-### Context & Chat History
+### Context & History Management
 
-- **Logging:** Segregates active session processing `chat.json` (read by the model) and `chat_history.json` (Contains all unedited chat history).
-- **Automated token compression:** automatically summarises older conversations when token counts reaches certain threshold to prevent context-window crashes.
-- **Multi-session support:** Switch between separate chat sessions.
+* **Logging:** Segregates active session processing `chat.json` (read by the model) and `chat_history.json` (Contains all unedited chat history).
+* **Automated Session Compression:** Dynamically summarizes older conversations history when context limits are reached, preventing context-window crashes.
+* **Multi-session support:** Create, store and switch between chat sessions.
 
 ### Long-Term Memory (ChromaDB integration)
 
-The agent automatically fetches relevant contextual memories using an embedding model. Manually interface with its memory is also supported using commands:
+The agent automatically retrieves relevant contextual memories using an embedding model. Manual memory management is also available via dedicated slash commands.
 
-- `/forget <prompt>` - Removes specified entries from the database.
-- `/memorise <prompt>` - Instruct agent to extract and save specified context to the database.
-- `/recall <prompt>` - Searches and retrieves matches from database.
+### Document Processing
 
-### Document processing
+Converts different file formats content into clean plaintext context strings, automatically injecting them into the active chat context.
 
-Converts different file formats content into clean plaintext context strings to append into the active chat session.
+* **Plain Text:** `.txt`
+* **Data & Configuration Formats:** `.csv`, `.xlsx`, `.yaml`, `.yml`, `.toml`, `.xml`
+* **Documents:** `.pdf`, `.docx`, `.epub`
+* **Code & Scripts:** `.py`, `.js`, `.ts`, `.tsx`, `.json`, `.md`, `.sh`, `.html`, `.css`, `.rs`, `.go`
+* **Fallback Behavior:** Any unlisted text-based format defaults to be read as plain-text.
 
-**Officially supported formats**
-- **Plain text:** `.txt`
-- **Data & configuration formats:** `.csv`, `.xlsx`, `.yaml`, `.yml`, `.toml`, `.xml`
-- **Text documents:** `.pdf`, `.docx`, `.epub`
-- **Programming:** `.py`, `.js`, `.ts`, `.tsx`, `.json`, `.md`, `.sh`, `.html`, `.css`, `.rs`, `.go`
-
-- Any other formats that are not on the list will be fallback to be read as plain text.
-
-### Web search
+### Web Search Integration
 
 Queries local or remote search engines.
 
-- `/search <prompt>` to enable ability.
-- Safely dumps all search results into a temporary `.json` file for model to read.
-- Generates an accurate answer based on the search results and user prompt, ensuring only the finalized answer enters chat log.
+* Executes web search queries based on model triggers or explicit user requests.
+* Safely dumps all search results into a temporary `.json` file for model analysis.
+* Synthesizes and presents only the finalized, context-aware answer in the main chat output.
 
-### Configuration
+---
 
-- All operational aspects of the agent are managed via `config.toml`:
+## Command Reference
+
+| Command | Description |
+| --- | --- |
+| `/forget <prompt>` | Removes matching entries from the long-term memory database. |
+| `/memorise <prompt>` | Instruct agent to extract and save key facts to the database. |
+| `/recall <prompt>` | Retrieves relevant memories from ChromaDB. |
+| `/search <prompt>` | Enable web search and generates a response based on the results. |
+
+---
+
+## Configuration
+
+All agent behavior, models and feature toggles are managed through `~/.agent_app/config.toml`:
 ```toml
 [models]
-chat                = "ministral_3b:latest" # Primary conversational LLM
-memory              = "nomic-embed-text"    # Embedding model for vector operations
-project_manager     = "gemma3:1b"           # Secondary processing model
+chat                = "ministral_3b:latest"
+memory              = "nomic-embed-text"
+project_manager     = "gemma3:1b"
 
-# Configurable model token thresholds
-# chat_max_tokens     = 4096
-# pm_max_tokens       = 2048
-
-[search]
-engine      = "http://localhost:8080/search"    # Search engine URL
-max_results = 3                                 # Maximum search results per query
+# Optional token limits
+# chat_max_tokens   =
+# pm_max_tokens     =
 
 [load_system_prompt]
 chat            = "system"
-memory          = "memory"
-project_manager = "project_manager"
+
+[memory]
+retrieve_entry_limit                        = 3
+auto_memory_store_enable_at_model_tokens    = 128000
+enable_auto_memory_retrieve                 = true
+enable_auto_memory_store                    = true
+
+[file_reader]
+auto_read_dropbox_enable_at_model_tokens    = 128000
+enable_auto_read_dropbox                    = true
+
+[search]
+engine                                  = "http://localhost:8080/search"
+max_results                             = 3
+max_char_per_page                       = 3000
+auto_web_search_enable_at_model_tokens  = 128000
+enable_auto_web_search                  = true
 ```
 
 ### Storage
@@ -70,18 +108,27 @@ All data stores in `~/.agent_app`:
 
 ```
 ~/.agent_app
-├── config.toml
-└── data
-    ├── chats                           (All session history)
-    │   ├── chat.json
-    │   ├── chat_history.json
-    │   ├── custom.json
-    │   └── custom_chat_history.json
-    ├── chroma                          (Chroma vector data)
-    │   └── chroma.sqlite3
-    ├── dropbox                         (All user uploads)
-    ├── projects
-    └── prompts
+├── config.toml                     # Primary application configuration
+└── data/
+    ├── chats/                      # Active and archived session history
+    │   ├── default_session/
+    │   │   ├── chat_history.json
+    │   │   └── chat.json
+    │   └── custom_session/
+    │       ├── chat_history.json
+    │       └── chat.json
+    ├── chroma/                     # Local ChromaDB sqlite vector index
+    │   └── chroma.sqlite3
+    ├── dropbox/                    # User document uploads
+    │   ├── chat/
+    │   │   ├── file.pdf
+    │   │   ├── file.txt
+    │   │   └── file_metadata.json
+    │   └── custom_session/
+    │       ├── file.py
+    │       └── file_metadata.json
+    ├── projects/                   # Workspace project files
+    └── prompts/                    # System prompt templates
 ```
 
 ### License
