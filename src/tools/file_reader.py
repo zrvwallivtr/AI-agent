@@ -492,8 +492,8 @@ class FileReader:
 
     def toggle_auto_read_dropbox(
             self,
-            max_tokens: int,
-            auto_read_dropbox: bool,
+            model_max_tokens: int,
+            enable_auto_read_dropbox: bool,
             messages: list[dict],
             prompt: str
     ) -> tuple[str, list[Path], bool]:
@@ -502,7 +502,7 @@ class FileReader:
 
         Model decides from {memory_entries} + {prompt} --> {file_content} from dropbox
         """
-        if auto_read_dropbox == True and max_tokens > config.AUTO_READ_DROPBOX_TOKENS:
+        if enable_auto_read_dropbox == True and model_max_tokens > config.AUTO_READ_DROPBOX_TOKENS:
 
             # Return nothing if dropbox is empty
             if _is_dir_empty(self.dropbox_dir):

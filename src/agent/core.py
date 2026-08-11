@@ -58,9 +58,9 @@ class Agent:
         self.file_reader    = FileReader(session=session)
 
     @property
-    def max_tokens(self) -> int:
+    def get_model_max_tokens(self) -> int:
         """Dynamically fetches the current token ceiling from 'self.token'."""
-        return self.tokens.max_tokens
+        return self.tokens.model_max_tokens
 
     # ===================================
     # Model validation
@@ -100,7 +100,7 @@ class Agent:
         estimate_next               = current_history_tokens + (len(prompt) // 4)
 
         # If not enough tokens for the next model output
-        if (self.tokens.max_tokens - estimate_next - reserve) < 0:
+        if (self.tokens.model_max_tokens - estimate_next - reserve) < 0:
             print("Current token exceeds threshold, compressing session...")
             self.chat.compression(self.model)
             print("Compression complete, continue session.")
@@ -130,17 +130,26 @@ class Agent:
         self.memory.delete_from_db([target_id])
         return "Entry deleted."
 
+    # /////////////////////////////////////////////////////////
+    # This should be moved after web search and file reader
+    # function to enable full context
+    # /////////////////////////////////////////////////////////
     def _cmd_memorise(self, prompt: str) -> str:
         """Extract key info from user prompt and save entries to memory."""
         if not prompt:
             return "Please specify what to memorize."
 
+        messages = self.chat.to_llm()
+        messages.append({
+            "role": "user",
+            "content": prompt
+        })
+
         print(f"Extracting content from user's input...")
-        created_ids, prompt_tokens, output_tokens = self.memory.extract_to_db(
-            context=self.chat.to_llm(),
+        created_ids, prompt_tokens, output_tokens = self.memory.extract_entries_and_store_to_db(
+            context=messages,
             prompt=prompt,
-            source="explicit",
-            manual=True
+            source="manual",
         )
 
         # print exactly the content that is stored
@@ -298,7 +307,6 @@ class Agent:
         print("Updataing dropbox metadata...")
         self.file_reader._add_metadata_and_summary(file_paths)
 
-
     # ===================================
     # Execution
     # ===================================
@@ -306,10 +314,11 @@ class Agent:
     def ask(
         self,
         prompt: str,
-        auto_memory_retrieve: bool = True,
-        auto_web_search: bool = True,
-        auto_read_dropbox: bool = True,
-        extra_context: bool = False,
+        enable_auto_memory_retrieve: bool = True,
+        enable_auto_memory_store: bool = False,
+        enable_auto_web_search: bool = True,
+        enable_auto_read_dropbox: bool = True,
+        enable_extra_context: bool = False,
         file_paths: list[Path] | None = None
     ) -> None | str:
         """
@@ -399,29 +408,29 @@ class Agent:
 
         messages = self.chat.to_llm()
 
-        memory_entries = self.memory.toggle_auto_add_memory_entry(
-            auto_memory_retrieve,
-            messages,
-            prompt
+        memory_entries = self.memory.toggle_auto_retrive_memory_entry(
+            enable_auto_memory_retrieve=enable_auto_memory_retrieve,
+            messages=messages,
+            prompt=prompt
         )
 
         file_contents, found_file_paths, read_dropbox = self.file_reader.toggle_auto_read_dropbox(
-            self.max_tokens,
-            auto_read_dropbox,
-            messages,
-            prompt
+            model_max_tokens=self.get_model_max_tokens,
+            enable_auto_read_dropbox=enable_auto_read_dropbox,
+            messages=messages,
+            prompt=prompt
         )
 
         search_results, query_with_urls, search = self.search_agent.toggle_auto_web_search(
-            self.max_tokens,
-            auto_web_search,
-            messages,
-            prompt,
-            memory_entries
+            model_max_tokens=self.get_model_max_tokens,
+            enable_auto_web_search=enable_auto_web_search,
+            messages=messages,
+            prompt=prompt,
+            memory_entries=memory_entries
         )
 
         # Toggle extra_context (read files)
-        if extra_context == True:
+        if enable_extra_context == True:
             self._add_extra_context(
                 messages=messages,
                 memory_entries=memory_entries,
@@ -465,8 +474,14 @@ class Agent:
             prompt_tokens=prompt_tokens,
             output_tokens=output_tokens
         )
-
+        
+        # if enable_auto_memory_store == True:
         # Add autosave to memory function (Toggle on/off)
+        self.memory.toggle_auto_store_memory_entry(
+            enable_auto_memory_store= True,
+            model_max_tokens=self.get_model_max_tokens,
+            context=self.chat.to_llm()
+        )
 
         # ==============
         # // End here //

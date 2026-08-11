@@ -17,7 +17,7 @@ MODEL_MAX = {
 # pm_tokens = Tokens(PM_MODEL, PM_MAX_TOKENS)
 
 class Tokens:
-    def __init__(self, model: str, max_tokens: int | None = None):
+    def __init__(self, model: str, model_max_tokens: int | None = None):
         self.model = model
 
         # ========================================
@@ -25,12 +25,12 @@ class Tokens:
         # ========================================
 
         # User specified max tokens
-        if max_tokens is not None:
-            self.max_tokens = max_tokens
+        if model_max_tokens is not None:
+            self.model_max_tokens = model_max_tokens
 
         # Fallback to predefined list
         elif self.model in MODEL_MAX:
-            self.max_tokens = MODEL_MAX[model]
+            self.model_max_tokens = MODEL_MAX[model]
 
         # Neither option is available
         else:
@@ -56,7 +56,7 @@ class Tokens:
 
     def check_fit(self, text: str, reserve: int = 50) -> bool:
         """Check if text fits within the model's bounds."""
-        return (self.estimate(text) + reserve) <= self.max_tokens
+        return (self.estimate(text) + reserve) <= self.model_max_tokens
 
     # =================================
     # Count tokens

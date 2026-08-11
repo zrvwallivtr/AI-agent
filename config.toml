@@ -1,4 +1,4 @@
-models]
+[models]
 #chat                = "gemma3:1b"
 chat                = "ministral_3b:latest"
 memory              = "nomic-embed-text"
@@ -16,14 +16,15 @@ chat            = "system"
 # url = "http://localhost:11434"
 
 [memory]
-retrieve_entry_limit = 3
+retrieve_entry_limit                        = 3
+auto_memory_store_enable_at_model_tokens    = 128000
 
 [file_reader]
-model_max_tokens    = 128000
+auto_read_dropbox_enable_at_model_tokens = 128000
 
 [search]
-engine              = "http://localhost:8080/search"
-max_results         = 3
-max_char_per_page   = 3000
-model_max_tokens    = 128000
+engine                                  = "http://localhost:8080/search"
+max_results                             = 3
+max_char_per_page                       = 3000
+auto_web_search_enable_at_model_tokens  = 128000
 

@@ -107,6 +107,7 @@ GET_FILE_LIST_PROMPT_PATH, GET_FILE_LIST_PROMPT = setup.prioritise_custom_prompt
 # ========================================================
 
 RETRIEVE_MEM_ENTRY_LIMIT = _cfg["memory"]["retrieve_entry_limit"]
+AUTO_MEMORY_STORE_TOKENS = _cfg["memory"]["auto_memory_store_enable_at_model_tokens"]
 
 
 # ========================================================
@@ -114,7 +115,7 @@ RETRIEVE_MEM_ENTRY_LIMIT = _cfg["memory"]["retrieve_entry_limit"]
 # ========================================================
 
 # Safeguard before enabling auto read files from dropbox
-AUTO_READ_DROPBOX_TOKENS = _cfg["file_reader"]["model_max_tokens"]
+AUTO_READ_DROPBOX_TOKENS = _cfg["file_reader"]["auto_read_dropbox_enable_at_model_tokens"]
 
 
 # ========================================================
@@ -126,7 +127,7 @@ MAX_RESULTS         = _cfg["search"]["max_results"]
 MAX_CHAR_PER_PAGE   = _cfg["search"]["max_char_per_page"]
 
 # Safeguard before enabling auto websearch
-AUTO_WEBSEARCH_TOKENS = _cfg["search"]["model_max_tokens"]
+AUTO_WEBSEARCH_TOKENS = _cfg["search"]["auto_web_search_enable_at_model_tokens"]
 
 
 ErrorManage.url_check(config_file, "engine", SEARCH_ENG)

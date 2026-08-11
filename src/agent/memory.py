@@ -39,6 +39,95 @@ class Memory:
         # Grabs or dynamically initializes collection
         self.vector_db = self.chroma_client.get_or_create_collection(name=collection_name)
 
+    # ============================================================
+    # To database
+    # ============================================================
+
+    def _append_to_db(
+        self,
+        content: str,
+        category: CATEGORY_TYPES,
+        source: str
+    ) -> str | None:
+        """
+        Appends new memory entry incrementally without wiping database.
+        Silently overwrite an old entry if the text is duplicated, or 
+        add a fresh record if it's completely new and returns its unique
+        entry id.
+        """
+        content_trimmed = content.strip()
+        if not content_trimmed:
+            return
+
+        # Check if token count exceeds max tokens of embedded model
+        if not self.tokens.check_fit(content_trimmed):
+            max_chars = self.tokens.model_max_tokens * 4
+            print(f"Error: Message exceeds model token count limits, current characters = {len(content_trimmed)}, max chars = {max_chars}")
+            return None
+
+        # Generate entry id based only its content (case insensitive)
+        entry_id = f"mem_{hashlib.md5(content_trimmed.lower().encode()).hexdigest()[:10]}"
+
+        # Generate vector embedding
+        response    = ollama.embeddings(model=self.embed_model, prompt=content_trimmed)
+        embedding   = response["embedding"]
+
+        # Add to ChromaDB
+        self.vector_db.upsert(
+            ids=[entry_id],
+            embeddings=[embedding],
+            documents=[content_trimmed],
+            metadatas=[{
+                "category": category,
+                "extraction": source,
+                "created_at": datetime.now().isoformat()
+            }]
+        )
+        return entry_id
+
+    def _format_and_append_to_db(self, extracted_output: str, source: str) -> list[str]:
+        """
+        Format every other memory entry to the next line, trims
+        out unnecessary spaces and symbols and return a list
+        of created database IDs.
+        """
+        created_ids = []
+
+        # Slice model output into line-by-line format
+        for line in extracted_output.split("\n"):
+            new_line = line.strip().lstrip("-*• ")
+
+            # Group 1 ([a-zA-Z\s_/]+):
+            # - Category name.
+            #
+            # Group 2 (.*):
+            # - Everything after the brackets.
+            match = re.search(r"\[([a-zA-Z\s_/]+)\]\s*(.*)", new_line)
+
+            if match:
+                category_tag    = match.group(1).strip().lower()
+                actual_content  = match.group(2).strip()
+
+                if not actual_content:
+                    continue
+
+                category = category_tag if category_tag in CATEGORIES else "fact"
+
+                # Save to database with category
+                entry_id = self._append_to_db(
+                    content=actual_content,
+                    category=category,
+                    source=source
+                )
+                if entry_id:
+                    created_ids.append(entry_id)
+
+        return created_ids
+
+    # ============================================================
+    # From database
+    # ============================================================
+
     def _grab_category_and_content(self, results: dict):
         """Retrieves 'category' and 'content' in each entry."""
         retrieved_entries = []
@@ -75,126 +164,6 @@ class Memory:
         retrieved_entries = self._grab_category_and_content(results)
 
         return retrieved_entries
-
-    def _append_to_db(
-        self,
-        content: str,
-        category: CATEGORY_TYPES,
-        source: str
-    ) -> str | None:
-        """
-        Appends new memory entry incrementally without wiping database.
-        Silently overwrite an old entry if the text is duplicated, or 
-        add a fresh record if it's completely new and returns its unique
-        entry id.
-        """
-        content_trimmed = content.strip()
-        if not content_trimmed:
-            return
-
-        # Check if token count exceeds max tokens of embedded model
-        if not self.tokens.check_fit(content_trimmed):
-            max_chars = self.tokens.max_tokens * 4
-            print(f"Error: Message exceeds model token count limits, current characters = {len(content_trimmed)}, max chars = {max_chars}")
-            return None
-
-        # Generate entry id based only its content (case insensitive)
-        entry_id = f"mem_{hashlib.md5(content_trimmed.lower().encode()).hexdigest()[:10]}"
-
-        # Generate vector embedding
-        response    = ollama.embeddings(model=self.embed_model, prompt=content_trimmed)
-        embedding   = response["embedding"]
-
-        # Add to ChromaDB
-        self.vector_db.upsert(
-            ids=[entry_id],
-            embeddings=[embedding],
-            documents=[content_trimmed],
-            metadatas=[{"category": category, "source": source, "created_at": datetime.now().isoformat()}]
-        )
-        return entry_id
-
-    def _format_and_append_to_db(self, extracted_output: str, source: str) -> list[str]:
-        """
-        Format every other memory entry to the next line, trims
-        out unnecessary spaces and symbols and return a list
-        of created database IDs.
-        """
-        created_ids = []
-
-        # Slice model output into line-by-line format
-        for line in extracted_output.split("\n"):
-            new_line = line.strip().lstrip("-*• ")
-
-            # Group 1 ([a-zA-Z\s_/]+):
-            # - Category name.
-            #
-            # Group 2 (.*):
-            # - Everything after the brackets.
-            match = re.search(r"\[([a-zA-Z\s_/]+)\]\s*(.*)", new_line)
-
-            if match:
-                category_tag    = match.group(1).strip().lower()
-                actual_content  = match.group(2).strip()
-
-                if not actual_content:
-                    continue
-
-                category = category_tag if category_tag in CATEGORIES else "fact"
-
-                # Save to database with category
-                entry_id = self._append_to_db(content=actual_content, category=category, source=source)
-                if entry_id:
-                    created_ids.append(entry_id)
-
-        return created_ids
-
-    def extract_to_db(
-        self, 
-        context: list[dict], 
-        prompt: str,
-        source: Literal["explicit", "extracted"],
-        manual: bool
-    ) -> tuple[list[str], int, int]:
-        """
-        Process conversation logs, extracts standalone atomic facts
-        via LLM, and preserves them in long-term vector storage.
-
-        Depends of the system prompt to decide whether to
-        extract memory automatically or manually.
-        """
-        # Extract memory manually
-        if manual == True:
-            system_prompt = self.mem_manual_prompt
-
-        # Extract memory automatically
-        else:
-            system_prompt = self.mem_prompt
-
-        try:
-            # Extract memory
-            response = LLM.response_with_new_sys_prompt_and_context(
-                model=self.model,
-                system_prompt=system_prompt,
-                context=context,
-                prompt=prompt
-            )
-
-            extracted_output, prompt_tokens, output_tokens = response
-
-            if not extracted_output or not extracted_output.strip():
-                return [], 0, 0
-
-            created_ids = self._format_and_append_to_db(extracted_output, source)
-
-            if created_ids:
-                print(f"Memory saved to '{self.path}'.")
-
-            return created_ids, prompt_tokens, output_tokens
-
-        except Exception as e:
-            print(f"Background memory synthesis encountered an error: {e}")
-            return [], 0, 0
 
     def add_memory_entries(self, prompt: str, messages: list[dict]) -> str:
         """
@@ -238,11 +207,6 @@ class Memory:
 
         return retrieved_entries
 
-    def delete_from_db(self, ids: list[str]):
-        """Removes a list vector ID reference key directly from database."""
-        if ids:
-            self.vector_db.delete(ids=ids)
-
     def get_exact_match(self, query: str) -> tuple[str, str] | None:
         """Finds the single closest memory matching the query."""
         if self.vector_db.count() == 0:
@@ -262,14 +226,82 @@ class Memory:
 
         return None
 
-    def toggle_auto_add_memory_entry(self, auto_memory_retrieve: bool, messages: list[dict], prompt: str) -> str:
+    def delete_from_db(self, ids: list[str]):
+        """Removes a list vector ID reference key directly from database."""
+        if ids:
+            self.vector_db.delete(ids=ids)
+
+    # ============================================================
+    # Model integration
+    # ============================================================
+
+    def extract_entries_and_store_to_db(
+        self, 
+        context: list[dict], 
+        source: Literal["manual", "automatic"],
+        prompt: str | None = None,
+    ) -> tuple[list[str], int, int]:
+        """
+        Process conversation logs, extracts standalone atomic facts
+        via LLM, and preserves them in long-term vector storage.
+
+        Depends of the system prompt to decide whether to
+        extract memory automatically or manually.
+        """
+        # Extract memory manually (User ask model with prompt)
+        if source == "manual":
+            system_prompt = self.mem_manual_prompt
+
+        # Extract memory automatically
+        else:
+            system_prompt = self.mem_prompt
+
+        try:
+            # Extract memory
+            response = LLM.response_with_auto_memory_store_format(
+                model=self.model,
+                system_prompt=system_prompt,
+                context=context,
+            )
+            extracted_output, prompt_tokens, output_tokens = response
+
+            if not extracted_output or not extracted_output.strip():
+                return [], 0, 0
+
+            created_ids = self._format_and_append_to_db(extracted_output, source)
+            if created_ids:
+                print(f"Memory saved to '{self.path}'.")
+            return created_ids, prompt_tokens, output_tokens
+
+        except Exception as e:
+            print(f"Background memory synthesis encountered an error: {e}")
+            return [], 0, 0
+
+    def toggle_auto_retrive_memory_entry(
+        self,
+        enable_auto_memory_retrieve: bool,
+        context: list[dict],
+        prompt: str
+    ) -> str:
         """
         Auto memory entry ability, returns memory entries if its toggled on.
 
         Model decides from {prompt} --> {memory_entries}
         """
-        if auto_memory_retrieve == True:
-            return self.add_memory_entries(prompt, messages)
+        if enable_auto_memory_retrieve == True:
+            return self.add_memory_entries(prompt, context)
 
         else:
             return ""
+
+    def toggle_auto_store_memory_entry(
+        self,
+        enable_auto_memory_store: bool,
+        model_max_tokens: int,
+        context: list[dict],
+    ):
+        if enable_auto_memory_store == True and model_max_tokens > config.AUTO_MEMORY_STORE_TOKENS:
+            created_ids, prompt_tokens, output_tokens = self.extract_entries_and_store_to_db(
+                context=context,
+                source= "automatic"
+            )

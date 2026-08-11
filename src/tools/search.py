@@ -282,8 +282,8 @@ class SearchAgent:
 
     def toggle_auto_web_search(
         self,
-        max_tokens: int,
-        auto_web_search: bool,
+        model_max_tokens: int,
+        enable_auto_web_search: bool,
         messages: list[dict],
         prompt: str,
         memory_entries: str | None
@@ -296,7 +296,7 @@ class SearchAgent:
         # Check if internet is available
         internet = is_connected()
 
-        if internet == True and auto_web_search == True and max_tokens > config.AUTO_WEBSEARCH_TOKENS:
+        if internet == True and enable_auto_web_search == True and model_max_tokens > config.AUTO_WEBSEARCH_TOKENS:
 
             # Enable auto web search
             search_context = messages

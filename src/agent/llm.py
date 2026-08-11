@@ -6,6 +6,70 @@ from rich.live import Live
 
 console = Console()
 
+def get_last_two_entries_roles(context: list[dict]) -> str:
+    """
+    Get the last two entries of the entire message dictionary, ensure
+    the last two entries are ordered in 'user' then 'assistant'. Else,
+    only returns 'user' entry.
+    """
+    last_two_entries = context[-2:]
+
+    # If conversation contains more than two entries
+    if len(last_two_entries) == 2:
+        roles = [msg.get("role") for msg in last_two_entries]
+        
+        # "user" then "assistant"
+        if roles == ["user", "assistant"]:
+            return "\n".join(
+                f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
+                for msg in last_two_entries
+            )
+
+        # "assistant" then "user"
+        if roles == ["assistant", "user"]:
+            user_msg = last_two_entries[1]
+            return f"{user_msg.get('role', 'user')}: {user_msg.get('content', '')}"
+
+    # If conversation contains only 1 entry
+    if len(last_two_entries) == 1:
+        return "Error: Format incorrect."
+
+    return ""
+
+def get_trimmed_previous_entries(context: list[dict]) -> str:
+    """
+    Get all previous entries excluding the system prompt and the
+    new entries starting with 'user'.
+    """
+    last_two_entries = context[-2:]
+
+    # If conversation contains more than two entries
+    if len(last_two_entries) == 2:
+        last_two_roles = [msg.get("role") for msg in last_two_entries]
+
+        # "user" then "assistant"
+        if last_two_roles == ["user", "assistant"]:
+            return "\n".join(
+                f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
+                for msg in context[:-2] # Excluding the last two entries
+                if msg.get("role") != "system" # Excluding system prompt
+            )
+
+        # "assistant" then "user"
+        if last_two_roles == ["assistant", "user"]:
+            user_msg = last_two_entries[1]
+            return "\n".join(
+                f"{user_msg.get('role', 'user')}: {user_msg.get('content', '')}"
+                for msg in context[:-1] # Excluding the last one entry
+                if msg.get("role") != "system" # Excluding system prompt
+            )
+
+    # If conversation contains only 1 entry
+    if len(last_two_entries) == 1:
+        return "Error: Format incorrect."
+
+    return ""
+
 
 class LLM:
 
@@ -77,5 +141,23 @@ class LLM:
 
         else:
             messages = [LLM.system(system_prompt)] + [LLM.user(prompt)]
+
+        return ollama.chat(model=model, messages=messages)
+
+    @staticmethod
+    def response_with_auto_memory_store_format(
+        model: str,
+        system_prompt: str,
+        context: list[dict]
+    ) -> ollama.ChatResponse:
+        """
+        Combines a system prompt, context and question with model response,
+        the formatting is modified suitable for storing memory functions.
+        """
+        trimmed_previous_entries_str    = get_trimmed_previous_entries(context)
+        last_two_entries_str            = get_last_two_entries_roles(context)
+
+        formatted_prompt    = f"All previous conversations:\n{trimmed_previous_entries_str}" + f"NEW CONVERSATIONS:\n{last_two_entries_str}"
+        messages            = [LLM.system(system_prompt)] + [LLM.user(formatted_prompt)]
 
         return ollama.chat(model=model, messages=messages)
