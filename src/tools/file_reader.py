@@ -16,6 +16,7 @@ from typing import Any
 
 from src.agent.llm import LLM
 from src.agent.chat import Chat
+from src.agent.tokens_handler import Tokens
 from src import config
 
 
@@ -45,6 +46,7 @@ class FileReader:
     ):
         self.chat               = Chat(session=session)
         self.model              = config.MODEL
+        self.tokens             = Tokens(model=self.model)
 
         # Files
         self.dropbox_dir        = session_path(session)
@@ -354,10 +356,9 @@ class FileReader:
 
             # Format individual file block
             block = (
-                "Context from file:\n"
-                f"Filename = {filename}\n"
-                f"{content}\n"
-                f"{'=' * 40}"
+                f"## Filename: {filename}\n"
+                f"File content:\n"
+                f"{content}\n\n"
             )
             blocks.append(block)
 
@@ -376,9 +377,9 @@ class FileReader:
         content, _ = self.load_file_content(file_path)
 
         formatted_file_content = (
-            f"Context from file:\n"
-            f"Filename = {filename}\n"
-            f"{content}\n"
+            f"## Filename: {filename}\n"
+            f"File content:\n"
+            f"{content}\n\n"
         )
 
         response = LLM.response_with_new_sys_prompt_and_context(
@@ -401,9 +402,8 @@ class FileReader:
     def _structured_file_string(self, filename: str, summary: str) -> str:
         """Format contents for model to read."""
         string = (
-            f"Filename = {filename}\n"
-            f"Summary = {summary}\n"
-            f"{'=' * 40}\n"
+            f"# Filename: {filename}\n"
+            f"File summary: {summary}\n\n---\n\n"
         )
         return string
 
@@ -489,7 +489,7 @@ class FileReader:
         
         entries = "\n\n".join(blocks)
 
-        return f"All available files:\n\n{'=' * 40}\n{entries}"
+        return f"# All available files\n\n{entries}"
 
     # ==================================================
     # Auto function
@@ -497,29 +497,33 @@ class FileReader:
 
     def toggle_auto_read_dropbox(
             self,
-            model_max_tokens: int,
-            enable_auto_read_dropbox: bool,
             messages: list[dict],
-            prompt: str
+            prompt: str,
+            memory_entries: str,
+            enable_extra_context: bool,
+            added_file_contents: str,
+            enable_auto_read_dropbox: bool
     ) -> tuple[str, list[Path], bool]:
         """
         Auto fetches previous file contents ability, return relevant files if its toggled on.
 
-        Model decides from {memory_entries} + {prompt} --> {file_content} from dropbox
+        Model decides from {memory_entries} + {prompt} + {attached_file} --> {file_content} from dropbox
         """
-        if enable_auto_read_dropbox == True and model_max_tokens > config.AUTO_READ_DROPBOX_TOKENS:
+        if enable_auto_read_dropbox == True and self.tokens.model_max_tokens > config.AUTO_READ_DROPBOX_TOKENS:
 
             # Return nothing if dropbox is empty
             if _is_dir_empty(self.dropbox_dir):
                 return "", [], False
-            
-            require_file = self.require_file_or_not(messages, prompt)
+
+            if enable_extra_context == True:
+                combined_prompt = f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# User prompt\n\n{prompt}\n\n## Uploaded file\n\n{added_file_contents}"
+            else:
+                combined_prompt = f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# User prompt\n\n{prompt}"
+            require_file = self.require_file_or_not(messages, combined_prompt)
 
             if require_file == True:
-
-                available_files_prompt = self._file_context()
-
-                found_files, not_found_files = self.get_filenames(messages, available_files_prompt)
+                available_files_prompt          = self._file_context()
+                found_files, not_found_files    = self.get_filenames(messages, available_files_prompt)
 
                 # turn found_files to paths
                 found_file_paths = [self.dropbox_dir / file for file in found_files]
@@ -554,10 +558,9 @@ class FileReader:
                     return ""
 
                 block = (
-                    f"Context from file:"
-                    f"Filename = {filename}\n"
-                    f"{file_content}\n"
-                    f"{'=' * 40}"
+                    f"### Filename: {filename}\n"
+                    f"File content:\n"
+                    f"{file_content}\n\n"
                 )
                 labelled_content.append(block)
 

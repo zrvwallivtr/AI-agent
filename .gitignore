@@ -9,9 +9,6 @@ __pycache__/
 # Environment secrets
 .env
 
-# Runtime & local data
-data/
-
 # Build & compilation artifacts
 agent-cli
 *.build/

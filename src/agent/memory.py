@@ -165,7 +165,7 @@ class Memory:
 
         return retrieved_entries
 
-    def add_memory_entries(self, prompt: str, messages: list[dict]) -> str:
+    def add_memory_entries(self, prompt: str) -> str:
         """
         Queries long-term vector storage and adds context
         into user's prompt.
@@ -180,8 +180,7 @@ class Memory:
             )
 
             # Combined found memories and user's question
-            new_message = f"Relevant context from memory:\n{memory_text}\n"
-            new_message = f"{new_message}\n{'=' * 40}"
+            new_message = f"## Relevant context from memory\n\n{memory_text}\n\n---\n\n"
         else:
             # If no memories found
             new_message = ""
@@ -258,7 +257,7 @@ class Memory:
 
         try:
             # Extract memory
-            response = LLM.response_with_auto_memory_store_format(
+            response = LLM.response_auto_memory_store_format(
                 model=self.model,
                 system_prompt=system_prompt,
                 context=context,
@@ -280,7 +279,6 @@ class Memory:
     def toggle_auto_retrive_memory_entry(
         self,
         enable_auto_memory_retrieve: bool,
-        context: list[dict],
         prompt: str
     ) -> str:
         """
@@ -289,7 +287,7 @@ class Memory:
         Model decides from {prompt} --> {memory_entries}
         """
         if enable_auto_memory_retrieve == True:
-            return self.add_memory_entries(prompt, context)
+            return self.add_memory_entries(prompt)
 
         else:
             return ""

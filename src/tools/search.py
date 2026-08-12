@@ -1,4 +1,5 @@
 import datetime
+from operator import mod
 import requests
 import tempfile
 import os
@@ -8,6 +9,7 @@ import ollama
 from bs4 import BeautifulSoup
 
 from src.agent.llm import LLM
+from src.agent.tokens_handler import Tokens
 from src import config
 
 
@@ -142,6 +144,7 @@ class SearchAgent:
         self.model                  = config.MODEL
         self.search_or_not_prompt   = config.SEARCH_OR_NOT_PROMPT
         self.query_prompt           = config.QUERY_PROMPT
+        self.tokens                 = Tokens(model=self.model)
 
     def search_or_not(self, context: list[dict], prompt: str) -> bool:
         """
@@ -242,7 +245,7 @@ class SearchAgent:
 
             # print(search_results)
 
-            query_message = LLM.user(f"Context from web search:\n\n{search_results}\n\nUser question: {prompt}") # This won't be saved in chat
+            query_message = LLM.user(f"# Context from web search\n\n{search_results}\n\n---\n\nUser question: {prompt}") # This won't be saved in chat
 
             messages = context + [query_message]
 
@@ -282,11 +285,13 @@ class SearchAgent:
 
     def toggle_auto_web_search(
         self,
-        model_max_tokens: int,
-        enable_auto_web_search: bool,
         messages: list[dict],
         prompt: str,
-        memory_entries: str | None = None
+        memory_entries: str,
+        file_contents: str,
+        enable_extra_context: bool,
+        added_file_contents: str,
+        enable_auto_web_search: bool,
     ) -> tuple[str, list[dict[str, list[str]]], bool]:
         """
         Auto web search ability, returns search results if its toggled on.
@@ -296,19 +301,26 @@ class SearchAgent:
         # Check if internet is available
         internet = is_connected()
 
-        if internet == True and enable_auto_web_search == True and model_max_tokens > config.AUTO_WEB_SEARCH_TOKENS:
+        if internet == True and enable_auto_web_search == True and self.tokens.model_max_tokens > config.AUTO_WEB_SEARCH_TOKENS:
 
             # Enable auto web search
             search_context = messages
-            search_context.append({
-                "role": "user",
-                "content": f"{memory_entries}\nUser input:{prompt}"
-            })
 
-            search = self.search_or_not(messages, prompt)
+            if enable_extra_context == True:
+                search_context.append({
+                    "role": "user",
+                    "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n--\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# User input\n\n{prompt}\n\n## Uploaded files\n\n{added_file_contents}"
+                })
+            else:
+                search_context.append({
+                    "role": "user",
+                    "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n--\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# User input\n\n{prompt}"
+                })
+
+            search = self.search_or_not(search_context, prompt)
 
             if search == True:
-                return self.auto_web_search(messages, prompt)
+                return self.auto_web_search(search_context, prompt)
 
         return "Skip.", [{"": []}], False
 

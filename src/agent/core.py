@@ -260,52 +260,56 @@ class Agent:
 
         messages = self.chat.to_llm()
 
+        # Toggle extra_context (read files)
+        if enable_extra_context == True:
+            added_file_contents = self.file_reader.read_files_with_context_prompt(
+                context=messages,
+                file_paths=file_paths,
+            )
+
+            # Store file into dropbox
+            for path in file_paths:
+                content, _ = self.file_reader.load_file_content(path)
+                self.file_reader.store_file_in_dropbox(content, path)
+
+        else:
+            added_file_contents = ""
+
         memory_entries = self.memory.toggle_auto_retrive_memory_entry(
             enable_auto_memory_retrieve=enable_auto_memory_retrieve,
-            context=messages,
             prompt=prompt
         )
 
         file_contents, found_file_paths, read_dropbox = self.file_reader.toggle_auto_read_dropbox(
-            model_max_tokens=self.get_model_max_tokens,
-            enable_auto_read_dropbox=enable_auto_read_dropbox,
             messages=messages,
-            prompt=prompt
+            prompt=prompt,
+            memory_entries=memory_entries,
+            enable_extra_context=enable_extra_context,
+            added_file_contents=added_file_contents,
+            enable_auto_read_dropbox=enable_auto_read_dropbox
         )
 
         search_results, query_with_urls, search = self.search_agent.toggle_auto_web_search(
-            model_max_tokens=self.get_model_max_tokens,
-            enable_auto_web_search=enable_auto_web_search,
             messages=messages,
             prompt=prompt,
-            memory_entries=memory_entries
+            memory_entries=memory_entries,
+            file_contents=file_contents,
+            enable_extra_context=enable_extra_context,
+            added_file_contents=added_file_contents,
+            enable_auto_web_search=enable_auto_web_search
         )
-
-        # Toggle extra_context (read files)
-        if enable_extra_context == True:
-            self.extra_context.all(
-                messages=messages,
-                memory_entries=memory_entries,
-                file_contents=file_contents,
-                dropbox_files=found_file_paths,
-                read_dropbox=read_dropbox,
-                search_results=search_results,
-                query_with_urls=query_with_urls,
-                search=search,
-                file_paths=file_paths,
-                prompt=prompt
-            )
-
-            # ==============
-            # // End here //
-            # ==============
-            return
-
+        
         # Model answer
-        messages.append({
-            "role": "user",
-            "content": f"{memory_entries}\n{file_contents}\n{search_results}\nUser input:\n{prompt}"
-        })
+        if enable_extra_context:
+            messages.append({
+                "role": "user",
+                "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# Web search results\n\n{search_results}\n\n---\n\n# User input\n\n{prompt}\n\n## Uploaded files\n\n{added_file_contents}"
+            })
+        else:
+            messages.append({
+                "role": "user",
+                "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# Web search results\n\n{search_results}\n\n---\n\n# User input\n\n{prompt}\n\n"
+            })
         answer, prompt_tokens, output_tokens = LLM.model_response(messages=messages, model = self.model)
 
         # Save messages
@@ -321,6 +325,10 @@ class Agent:
             prompt_tokens=prompt_tokens,
             output_tokens=output_tokens
         )
+
+        # Update dropbox metadata
+        print("Updataing dropbox metadata...")
+        self.file_reader._add_metadata_and_summary(file_paths)
         
         self.memory.toggle_auto_store_memory_entry(
             enable_auto_memory_store= True,

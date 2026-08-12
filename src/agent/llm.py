@@ -73,9 +73,9 @@ def get_trimmed_previous_entries(context: list[dict]) -> str:
 
 class LLM:
 
-    # ===========================
+    # =====================================================================
     # Roles
-    # ===========================
+    # =====================================================================
 
     @staticmethod
     def system(content: str) -> dict:
@@ -92,9 +92,9 @@ class LLM:
         user_entry = {"role": "user", "content": content}
         return user_entry
 
-    # ===========================
-    # Execution
-    # ===========================
+    # =====================================================================
+    # General model response (streamed onto the terminal)
+    # =====================================================================
 
     @staticmethod
     def model_response(messages: list[dict], model: str) -> tuple[str, int, int]:
@@ -125,6 +125,10 @@ class LLM:
 
         return response, prompt_tokens, output_tokens
 
+    # =====================================================================
+    # Modified model response for customised system prompt and context
+    # =====================================================================
+
     @staticmethod
     def response_with_new_sys_prompt_and_context(
         model: str,
@@ -134,15 +138,18 @@ class LLM:
     ) -> ollama.ChatResponse:
         """Combines a system prompt, context and question with model response."""
         if context:
-            formatted_question              = f"User input:\n{prompt}"
+            formatted_question              = f"# User input\n{prompt}"
             context_without_system_prompt   = [msg for msg in context if msg["role"] != "system"]
-
             messages                        = [LLM.system(system_prompt)] + context_without_system_prompt + [LLM.user(formatted_question)]
 
         else:
             messages = [LLM.system(system_prompt)] + [LLM.user(prompt)]
 
         return ollama.chat(model=model, messages=messages)
+
+    # =====================================================================
+    # Memory response formats
+    # =====================================================================
 
     @staticmethod
     def response_memory_recall(
@@ -156,21 +163,20 @@ class LLM:
         if context:
             formatted_question              = f"{recalled}\n{prompt}"
             context_without_system_prompt   = [msg for msg in context if msg["role"] != "system"]
-
             messages                        = [LLM.system(system_prompt)] + context_without_system_prompt + [LLM.user(formatted_question)]
 
         else:
             messages = [LLM.system(system_prompt)] + [LLM.user(prompt)]
 
-        response    = ollama.chat(model=model, messages=messages)
-        content     = response.message.content
-        prompt_tokens = getattr(response, "prompt_eval_cound", 0) or 0
-        output_tokens = getattr(response, "eval_cound", 0) or 0
+        response        = ollama.chat(model=model, messages=messages)
+        content         = response.message.content
+        prompt_tokens   = getattr(response, "prompt_eval_cound", 0) or 0
+        output_tokens   = getattr(response, "eval_cound", 0) or 0
 
         return LLM.model_response(messages, model)
 
     @staticmethod
-    def response_with_auto_memory_store_format(
+    def response_auto_memory_store_format(
         model: str,
         system_prompt: str,
         context: list[dict]
@@ -182,12 +188,12 @@ class LLM:
         trimmed_previous_entries_str    = get_trimmed_previous_entries(context)
         last_two_entries_str            = get_last_two_entries_roles(context)
 
-        formatted_prompt    = f"All previous conversations:\n{trimmed_previous_entries_str}" + f"NEW CONVERSATIONS:\n{last_two_entries_str}"
+        formatted_prompt    = f"# All previous conversations\n{trimmed_previous_entries_str}\n\n---\n\n" + f"# New conversations\n{last_two_entries_str}"
         messages            = [LLM.system(system_prompt)] + [LLM.user(formatted_prompt)]
 
-        response    = ollama.chat(model=model, messages=messages)
-        content     = response.message.content
-        prompt_tokens = getattr(response, "prompt_eval_cound", 0) or 0
-        output_tokens = getattr(response, "eval_cound", 0) or 0
+        response        = ollama.chat(model=model, messages=messages)
+        content         = response.message.content
+        prompt_tokens   = getattr(response, "prompt_eval_cound", 0) or 0
+        output_tokens   = getattr(response, "eval_cound", 0) or 0
 
         return content, prompt_tokens, output_tokens

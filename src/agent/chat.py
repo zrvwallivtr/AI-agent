@@ -73,18 +73,11 @@ class Chat:
         2. Chat history -> 'self.chat_history_path'
         """
         # Active conversation:
-        # - Purpose: Read by the MODEL.
-        # - Overwrites entire file with messages stored
-        #   in 'self._messages'.
-        #
         # Note: File can still be created with no questions asked.
         self.active_conv_path.parent.mkdir(parents=True, exist_ok=True)
         self.active_conv_path.write_text(json.dumps(self._messages, indent=4))
 
         # Chat history:
-        # - Purpose: Read by the user.
-        # - Append new entry with contents stored in 'msg'.
-        #
         # Note: Only called when message is present.
         if msg:
             self.chat_history_path.parent.mkdir(parents=True, exist_ok=True)
@@ -273,6 +266,9 @@ class Chat:
         self._messages.append(msg)
         self.save(msg)
 
+    # ///////////////////////////////////////////////////////////////
+    # UPDATE REQUIRED
+    # ///////////////////////////////////////////////////////////////
     def compression(self, model: str):
         """
         Summarise all conversations:
@@ -280,12 +276,17 @@ class Chat:
         The compression steps depends on the size of the
         model.
         """
+        # ///////////////////////////////////////////////////////////
         # if max_token < set number:
         #
         # Applicable for micro models (~ 1-3B).
+        # ///////////////////////////////////////////////////////////
 
+        # ///////////////////////////////////////////////////////////
         # Could add token check to ensure the output 
         # summary is under (max_token * 0.1).
+        # ///////////////////////////////////////////////////////////
+
         history = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in self.to_llm()])
 
         messages = [
@@ -324,10 +325,12 @@ class Chat:
             output_tokens=output_tokens
         )
 
+        # ///////////////////////////////////////////////////////////
         # if max_token < a higher set number (~ 7-13B model max)
         #   keep ~ 3-6 conversations, or the sum of
         #   conversations that is under (max_token * 0.2).
-
+        #
         # if max_token > very high set number (~ 30B model max)
         #   keep ~ 10-20 conversations, or the sum of
         #   conversations that is under (max_token * 0.3).
+        # ///////////////////////////////////////////////////////////

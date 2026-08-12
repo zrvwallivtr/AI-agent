@@ -31,15 +31,8 @@ class ExtraContext:
     def all(
         self,
         messages: list[dict],
-        file_contents: str,
-        dropbox_files: list[Path],
-        read_dropbox: bool,
-        search_results: str,
-        query_with_urls: list[dict[str, list[str]]],
-        search: bool,
         file_paths: list[Path] | None,
         prompt: str,
-        memory_entries: str = "",
     ):
         """If memory entries are given model, reads the list of files and response, else skip."""
         added_file_contents = self.file_reader.read_files_with_context_prompt(
@@ -52,29 +45,7 @@ class ExtraContext:
             content, _ = self.file_reader.load_file_content(path)
             self.file_reader.store_file_in_dropbox(content, path)
 
-        messages.append({
-            "role": "user",
-            "content": f"{memory_entries}\n{file_contents}\n{search_results}\n{added_file_contents}User input:\n{prompt}"
-        })
-
-        answer, prompt_tokens, output_tokens = LLM.model_response(messages, self.model)
-
-        # Save user message
-        self.chat.append_user_message_with_metadata(
-            content=prompt,
-            state="external",
-            attachments=file_paths
-        )
-
-        # Save assistant message
-        self.chat.append_assistant_message_with_metadata(
-            content=answer,
-            state="external", 
-            attachments=dropbox_files,
-            query_with_urls=query_with_urls,
-            prompt_tokens=prompt_tokens,
-            output_tokens=output_tokens
-        )
+        file_content = f"# Newly uploaded file\n\n{added_file_contents}\n\n---\n\n"
 
         # Update dropbox metadata
         print("Updataing dropbox metadata...")
