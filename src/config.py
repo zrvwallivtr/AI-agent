@@ -82,6 +82,7 @@ MEM_PROMPT_DIR                              = PROMPT_DIR / "memory"
 CUS_MEM_PROMPT_DIR                          = CUS_PROMPT_DIR / "memory"
 MEM_PROMPT_PATH, MEM_PROMPT                 = setup.prioritise_custom_prompt("memory_agent", config_file, CUS_MEM_PROMPT_DIR, MEM_PROMPT_DIR)
 MEM_MANUAL_PROMPT_PATH, MEM_MANUAL_PROMPT   = setup.prioritise_custom_prompt("manual_memory_extraction", config_file, CUS_MEM_PROMPT_DIR, MEM_PROMPT_DIR)
+MEM_RECALL_INTERPRET_PATH, MEM_RECALL_INTERPRET_PROMPT = setup.prioritise_custom_prompt("memory_recall_interpreter", config_file, CUS_MEM_PROMPT_DIR, MEM_PROMPT_DIR)
 
 # Project manager
 PM_PROMPT_DIR               = PROMPT_DIR / "project_manager"

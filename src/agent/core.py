@@ -232,6 +232,7 @@ class Agent:
                     enable_auto_memory_store=enable_auto_memory_store,
                     enable_auto_web_search=enable_auto_web_search,
                     enable_auto_read_dropbox=enable_auto_read_dropbox,
+                    limit=4,
                     file_paths=file_paths
                 )
                 if response:

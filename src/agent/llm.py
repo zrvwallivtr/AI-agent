@@ -145,6 +145,31 @@ class LLM:
         return ollama.chat(model=model, messages=messages)
 
     @staticmethod
+    def response_memory_recall(
+        model: str,
+        system_prompt: str,
+        recalled: str,
+        prompt: str,
+        context: list[dict] | None = None
+    ) -> ollama.ChatResponse:
+        """Model reponse with memory recall system prompt and format."""
+        if context:
+            formatted_question              = f"{recalled}\n{prompt}"
+            context_without_system_prompt   = [msg for msg in context if msg["role"] != "system"]
+
+            messages                        = [LLM.system(system_prompt)] + context_without_system_prompt + [LLM.user(formatted_question)]
+
+        else:
+            messages = [LLM.system(system_prompt)] + [LLM.user(prompt)]
+
+        response    = ollama.chat(model=model, messages=messages)
+        content     = response.message.content
+        prompt_tokens = getattr(response, "prompt_eval_cound", 0) or 0
+        output_tokens = getattr(response, "eval_cound", 0) or 0
+
+        return LLM.model_response(messages, model)
+
+    @staticmethod
     def response_with_auto_memory_store_format(
         model: str,
         system_prompt: str,
