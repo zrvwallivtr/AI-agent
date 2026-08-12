@@ -11,10 +11,9 @@ __pycache__/
 
 # Runtime & local data
 data/
-logs/
 
 # Build & compilation artifacts
-agent
+agent-cli
 *.build/
 *.dist/
 *.onefile-build/
