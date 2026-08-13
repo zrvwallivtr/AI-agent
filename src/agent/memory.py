@@ -12,7 +12,10 @@ from src import config
 from src.agent.chat import Chat
 from src.agent.llm import LLM
 from src.agent.tokens_handler import Tokens
+from src.logger import get_logger
 
+
+logger = get_logger(__name__)
 
 CATEGORY_TYPES = Literal["preference", "stack", "fact", "project", "instruction", "correction"]
 
@@ -21,12 +24,12 @@ CATEGORIES = list(get_args(CATEGORY_TYPES))
 
 class Memory:
     def __init__(self, project: str | None = None):
+        self.project            = project
         self.model              = config.MODEL
         self.embed_model        = config.EMBED_MODEL
         self.mem_prompt         = config.MEM_PROMPT
         self.mem_manual_prompt  = config.MEM_MANUAL_PROMPT
         self.path               = config.CHROMADB_DIR
-        self.project            = project
         self.tokens             = Tokens(self.embed_model)
 
         # Initialize local ChromaDB client
@@ -56,23 +59,31 @@ class Memory:
         entry id.
         """
         content_trimmed = content.strip()
-        if not content_trimmed:
-            return
 
         # Check if token count exceeds max tokens of embedded model
         if not self.tokens.check_fit(content_trimmed):
             max_chars = self.tokens.model_max_tokens * 4
-            print(f"Error: Message exceeds model token count limits, current characters = {len(content_trimmed)}, max chars = {max_chars}")
-            return None
+            logger.warning(
+                "Content exceeds token budget: Current characters=%d, maximum characters=%d",
+                len(content_trimmed),
+                max_chars
+            )
+            print("Error: Message exceeds model token count limits")
+            return
 
         # Generate entry id based only its content (case insensitive)
         entry_id = f"mem_{hashlib.md5(content_trimmed.lower().encode()).hexdigest()[:10]}"
 
         # Generate vector embedding
-        response    = ollama.embeddings(model=self.embed_model, prompt=content_trimmed)
-        embedding   = response["embedding"]
+        response = ollama.embeddings(model=self.embed_model, prompt=content_trimmed)
+        if not response:
+            logger.warning("Failed to generate embedding for memory entry")
+            print("Error: Model failed to generate vector embedding")
+            return
+        logger.debug("Generated vector embedding for content")
 
         # Add to ChromaDB
+        embedding = response["embedding"]
         self.vector_db.upsert(
             ids=[entry_id],
             embeddings=[embedding],
@@ -83,6 +94,7 @@ class Memory:
                 "created_at": datetime.now().isoformat()
             }]
         )
+        logger.info("Memory content(s) added to the database: id=%s, category=%s", entry_id, category)
         return entry_id
 
     def _format_and_append_to_db(self, extracted_output: str, source: str) -> list[str]:
@@ -142,19 +154,27 @@ class Memory:
 
         return retrieved_entries
 
-    def retrieve_relevant_entry(self, prompt: str, limit: int = config.RETRIEVE_MEM_ENTRY_LIMIT) -> list[dict]:
+    def retrieve_relevant_entry(
+        self,
+        prompt: str,
+        limit: int = config.RETRIEVE_MEM_ENTRY_LIMIT
+    ) -> list[dict]:
         """Queries ChromaDB using semantics."""
         # Returns nothing if database is empty
         if self.vector_db.count() == 0:
+            logger.debug("Vector search skipped: Database is empty")
             return []
 
         # Generate embedding for the question
         response = ollama.embeddings(model=self.embed_model, prompt=prompt)
-
-        # Extracts raw vector array
-        query_embedding = response["embedding"]
+        if not response:
+            logger.error("Failed to generate embedding search prompt")
+            print("Error: Model failed to generate vector embedding")
+            return []
+        logger.debug("Generated query embedding for search")
 
         # Search ChromaDB for top matches with question vector
+        query_embedding = response["embedding"]
         results = self.vector_db.query(
             query_embeddings=[query_embedding],
             n_results=limit
@@ -170,65 +190,94 @@ class Memory:
         Queries long-term vector storage and adds context
         into user's prompt.
         """
+        logger.debug("Retrieving relevant vector memory for prompt context")
         memory = self.retrieve_relevant_entry(prompt, limit=config.RETRIEVE_MEM_ENTRY_LIMIT)
 
-        if memory:
-            # Reformat for model readability
-            memory_text = "\n".join(
-                f"- [{entry['category']}] {entry['content']}"
-                for entry in memory
-            )
-
-            # Combined found memories and user's question
-            new_message = f"## Relevant context from memory\n\n{memory_text}\n\n---\n\n"
-        else:
-            # If no memories found
+        if not memory:
+            logger.info("No relevant memory entry found for prompt context")
             new_message = ""
+
+        # Reformat for model readability
+        memory_text = "\n".join(
+            f"- [{entry['category']}] {entry['content']}"
+            for entry in memory
+        )
+        new_message = f"## Relevant context from memory\n\n{memory_text}\n\n---\n\n"
+        logger.info("Retrieved %d relevant memory entry(s)", len(memory))
 
         return new_message
 
-    def get_entries_by_ids(self, ids: list[str]) -> list[dict]:
+    def get_entries_by_ids(self, ids: list[str] | None) -> list[dict]:
         """Retrieves documents and metadata directly from ChromaDB using IDs."""
-        if not ids or self.vector_db.count() == 0:
+        if not ids:
+            logger.warning("Cannot retrieve entries: No IDs provided")
+            return []
+
+        if self.vector_db.count() == 0:
+            logger.warning("Cannot retrieve entries: Database is emtpy")
             return []
 
         results = self.vector_db.get(ids=ids)
 
+        if not results:
+            logger.warning("No matches found for provided IDs")
+            return []
+
+        if not "documents" in results and not results["documents"]:
+            logger.warning("Database response missing 'documents' payload")
+            return []
+
+        # Returns lists for ids, documents and metadatas
         retrieved_entries = []
-        if results and "documents" in results and results["documents"]:
-            # Returns lists for ids, documents and metadatas
-            for entry_id, doc, metadata in zip(results["ids"], results["documents"], results["metadatas"]):
-                retrieved_entries.append({
-                    "id": entry_id,
-                    "category": metadata.get("category", "fact") if metadata else "fact",
-                    "content": doc
-                })
+        for entry_id, doc, metadata in zip(results["ids"], results["documents"], results["metadatas"]):
+            retrieved_entries.append({
+                "id": entry_id,
+                "category": metadata.get("category", "fact") if metadata else "fact",
+                "content": doc
+            })
+            logger.info("Retrieved %d memory entry(s) by ID", len(retrieved_entries))
 
         return retrieved_entries
 
     def get_exact_match(self, query: str) -> tuple[str, str] | None:
         """Finds the single closest memory matching the query."""
         if self.vector_db.count() == 0:
+            logger.warning("Exact match query skipped: Database is emtpy")
             return None
 
         # Embed query to find the target
-        response        = ollama.embeddings(model=self.embed_model, prompt=query)
-        query_embedding = response["embedding"]
+        response = ollama.embeddings(model=self.embed_model, prompt=query)
+        if not response:
+            logger.error("Failed to generate embedding for exact match query")
+            print("Error: Model failed to generate vector embedding")
+            return None
+        logger.info("Vector embedding generated")
 
         # Look for top 1 exact match
+        query_embedding = response["embedding"]
         results = self.vector_db.query(query_embeddings=[query_embedding], n_results=1)
 
-        if results and results["ids"] and results["ids"][0] and len(results["ids"][0]) > 0:
-            target_id = results["ids"][0][0]
-            matched_content = results["documents"][0][0]
-            return target_id, matched_content
+        if not results:
+            logger.warning("Exact match query returned empty results structure")
+            return None
 
-        return None
+        if not results["ids"] and not results["ids"][0] and not len(results["ids"][0]) > 0:
+            logger.warning("No matching IDs found for exact match query")
+            return None
+
+        target_id = results["ids"][0][0]
+        matched_content = results["documents"][0][0]
+        logger.info("Found exact memory match, target_id=%s", target_id)
+
+        return target_id, matched_content
+
 
     def delete_from_db(self, ids: list[str]):
         """Removes a list vector ID reference key directly from database."""
-        if ids:
-            self.vector_db.delete(ids=ids)
+        if not ids:
+            return
+        self.vector_db.delete(ids=ids)
+        logger.info("Deleted %d memory entry(s) from database: ids=%s", len(ids), ids)
 
     # ============================================================
     # Model integration
@@ -265,15 +314,17 @@ class Memory:
             extracted_output, prompt_tokens, output_tokens = response
 
             if not extracted_output or not extracted_output.strip():
+                logger.info("No entries found during memory extraction")
                 return [], 0, 0
 
             created_ids = self._format_and_append_to_db(extracted_output, source)
             if created_ids:
-                print(f"Memory saved to '{self.path}'.")
+                logger.info("Extracted and saved %d memory entry(s)", len(created_ids))
+                print(f"Memory saved")
             return created_ids, prompt_tokens, output_tokens
 
         except Exception as e:
-            print(f"Background memory synthesis encountered an error: {e}")
+            logger.error("Memory extraction synthesis failed: error=%s", e, exc_info=True)
             return [], 0, 0
 
     def toggle_auto_retrive_memory_entry(
@@ -298,8 +349,13 @@ class Memory:
         model_max_tokens: int,
         context: list[dict],
     ):
-        if enable_auto_memory_store == True and model_max_tokens > config.AUTO_MEMORY_STORE_TOKENS:
-            created_ids, prompt_tokens, output_tokens = self.extract_entries_and_store_to_db(
-                context=context,
-                source= "automatic"
-            )
+        if enable_auto_memory_store == False:
+            return
+
+        if model_max_tokens < config.AUTO_MEMORY_STORE_TOKENS:
+            return
+
+        created_ids, prompt_tokens, output_tokens = self.extract_entries_and_store_to_db(
+            context=context,
+            source= "automatic"
+        )

@@ -1,4 +1,3 @@
-from re import search
 import ollama
 from pathlib import Path
 
@@ -10,18 +9,24 @@ from src.agent.cmd_functions import Command
 from src.agent.extra_context import ExtraContext
 from src.tools.search import is_connected, SearchAgent
 from src.tools.file_reader import FileReader
-
+from src.logger import get_logger
 from src import config
+
+
+logger = get_logger(__name__)
 
 
 def _last_token_usage(messages: list[dict]) -> tuple[int, int]:
     """Returns prompt_tokens and output_tokens from the latest assistant message."""
     for msg in reversed(messages):
 
-        # Only the 'assistant' message have token counts.
         if msg["role"] == "assistant":
-            return msg.get("prompt_tokens", 0), msg.get("output_tokens", 0)
+            prompt_tokens = msg.get("prompt_tokens", 0)
+            output_tokens = msg.get("output_tokens", 0)
+            logger.info("Latest assistant response found (prompt_tokens=%d, output_tokens=%d)", prompt_tokens, output_tokens)
+            return prompt_tokens, output_tokens
 
+    logger.warning("Latest assistant response not found")
     return 0, 0 # no previous assistant message yet (first turn)
 
 def _detect_cmd(prompt: str) -> tuple[str | None, str]:
@@ -32,7 +37,10 @@ def _detect_cmd(prompt: str) -> tuple[str | None, str]:
         parts           = question_trimmed.split(" ", 1)
         cmd             = parts[0]
         cleaned_text    = parts[1].strip() if len(parts) > 1 else ""
+        logger.info("Command detected: %s", cmd)
         return cmd, cleaned_text
+
+    logger.info("No command detected")
     return None, prompt
 
 
@@ -53,12 +61,13 @@ class Agent:
             self.tokens = Tokens(model)
 
         self.model          = model  # model is specified in the config file
+        self.session        = session
         self.project        = project
         self.chat           = Chat(session=session)
         self.memory         = Memory(project=project)
         self.file_reader    = FileReader(session=session)
         self.command        = Command(model=model, session=session, project=project)
-        self.extra_context  = ExtraContext(model=model, session=session, project=project)
+        self.extra_context  = ExtraContext(session=session)
         self.search_agent   = SearchAgent()
 
     @property
@@ -77,16 +86,22 @@ class Agent:
             local_models = [m['model'] for m in ollama.list().get('models', [])]
 
             # Check match
+            unknown_models = []
             if model not in local_models:
+                unknown_models += model
+                logger.error("Unknown or unavailable model detected: %s", model)
                 raise ValueError(
                     f"Error: Unknown or unavailable model: '{model}'."
                     f"Run 'ollama pull {model}' to install model."
                 )
+            known_models = set(local_models) - set(unknown_models)
+            logger.error("Fetched all local models:\n Known models = %s\n Unknown model = %s", known_models, unknown_models)
 
         except Exception as e:
             # If ollama is down
             if isinstance(e, ValueError):
                 raise e
+            logger.critical("Could not connect to local Ollama service: %s", e)
             raise RuntimeError(f"Error: Could not connect to local Ollama service: {e}")
 
     # ===================================
@@ -103,71 +118,13 @@ class Agent:
         current_history_tokens      = self.tokens.count_history_tokens(self.chat.to_llm())
         estimate_next               = current_history_tokens + (len(prompt) // 4)
 
-        # If not enough tokens for the next model output
-        if (self.tokens.model_max_tokens - estimate_next - reserve) < 0:
-            print("Current token exceeds threshold, compressing session...")
+        if self.tokens.model_max_tokens - estimate_next -reserve < 0:
+            logger.info("Current tokens exceeds threshold. Triggering compression")
+            print("Current tokens exceeds threshold. Compressing session...")
             self.chat.compression(self.model)
-            print("Compression complete, continue session.")
-
-    # ===================================
-    # Extra context
-    # ===================================
-
-    def _add_extra_context(
-        self,
-        messages: list[dict],
-        memory_entries: str,
-
-        file_contents: str,
-        dropbox_files: list[Path],
-        read_dropbox: bool,
-
-        search_results: str,
-        query_with_urls: list[dict[str, list[str]]],
-        search: bool,
-
-        file_paths: list[Path] | None,
-
-        prompt: str
-    ):
-        """If memory entries are given model, reads the list of files and response, else skip."""
-        added_file_contents = self.file_reader.read_files_with_context_prompt(
-            context=messages,
-            file_paths=file_paths,
-        )
-
-        # Store file into dropbox
-        for path in file_paths:
-            content, _ = self.file_reader.load_file_content(path)
-            self.file_reader.store_file_in_dropbox(content, path)
-
-        messages.append({
-            "role": "user",
-            "content": f"{memory_entries}\n{file_contents}\n{search_results}\n{added_file_contents}User input:\n{prompt}"
-        })
-
-        answer, prompt_tokens, output_tokens = LLM.model_response(messages, self.model)
-
-        # Save user message
-        self.chat.append_user_message_with_metadata(
-            content=prompt,
-            state="external",
-            attachments=file_paths
-        )
-
-        # Save assistant message
-        self.chat.append_assistant_message_with_metadata(
-            content=answer,
-            state="external", 
-            attachments=dropbox_files,
-            query_with_urls=query_with_urls,
-            prompt_tokens=prompt_tokens,
-            output_tokens=output_tokens
-        )
-
-        # Update dropbox metadata
-        print("Updataing dropbox metadata...")
-        self.file_reader._add_metadata_and_summary(file_paths)
+            print("Continue session...")
+            return
+        logger.info("Current tokens within threshold. Continue session")
 
     # ===================================
     # Execution
@@ -205,24 +162,29 @@ class Agent:
             # Only use 'user_prompt' as 'prompt' here
 
             if cmd == "/forget":
+                logger.info("'/forget' command triggered")
                 response = self.command.cmd_forget(user_prompt)
+
                 if response:
                     print(response)
+                return
                 # ==============
                 # // End here //
                 # ==============
-                return
 
             if cmd == "/memorise":
+                logger.info("'/memorise' command triggered")
                 response = self.command.cmd_memorise(prompt=user_prompt)
+
                 if response:
                     print(response)
+                return
                 # ==============
                 # // End here //
                 # ==============
-                return
 
             if cmd == "/recall":
+                logger.info("'/recall' command triggered")
                 # User's question and agent's response were saved
                 response = self.command.cmd_recall(
                     model_max_tokens=self.get_model_max_tokens,
@@ -235,55 +197,48 @@ class Agent:
                     limit=4,
                     file_paths=file_paths
                 )
+
                 if response:
                     print(response)
+                return
                 # ==============
                 # // End here //
                 # ==============
-                return
 
             if cmd == "/search":
+                logger.info("'/search' command tirggered")
                 # User's question were saved
                 response = self.command.cmd_search(user_prompt)
+
                 if response:
                     print(response)
-
                 self.memory.toggle_auto_store_memory_entry(
                     enable_auto_memory_store= True,
                     model_max_tokens=self.get_model_max_tokens,
                     context=self.chat.to_llm()
                 )
+                return
                 # ==============
                 # // End here //
                 # ==============
-                return
 
         messages = self.chat.to_llm()
 
-        # Toggle extra_context (read files)
-        if enable_extra_context == True:
-            added_file_contents = self.file_reader.read_files_with_context_prompt(
-                context=messages,
-                file_paths=file_paths,
-            )
-
-            # Store file into dropbox
-            for path in file_paths:
-                content, _ = self.file_reader.load_file_content(path)
-                self.file_reader.store_file_in_dropbox(content, path)
-
-        else:
-            added_file_contents = ""
+        added_file_contents = self.extra_context.all(
+            messages=messages,
+            enable_extra_context=enable_extra_context,
+            file_paths=file_paths
+        )
 
         memory_entries = self.memory.toggle_auto_retrive_memory_entry(
-            enable_auto_memory_retrieve=enable_auto_memory_retrieve,
+            enable_auto_memory_retrieve=enable_auto_memory_retrieve, 
             prompt=prompt
         )
 
         file_contents, found_file_paths, read_dropbox = self.file_reader.toggle_auto_read_dropbox(
-            messages=messages,
+            messages=messages, 
             prompt=prompt,
-            memory_entries=memory_entries,
+            memory_entries=memory_entries, 
             enable_extra_context=enable_extra_context,
             added_file_contents=added_file_contents,
             enable_auto_read_dropbox=enable_auto_read_dropbox
@@ -300,7 +255,7 @@ class Agent:
         )
         
         # Model answer
-        if enable_extra_context:
+        if enable_extra_context == True:
             messages.append({
                 "role": "user",
                 "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# Web search results\n\n{search_results}\n\n---\n\n# User input\n\n{prompt}\n\n## Uploaded files\n\n{added_file_contents}"
@@ -313,10 +268,7 @@ class Agent:
         answer, prompt_tokens, output_tokens = LLM.model_response(messages=messages, model = self.model)
 
         # Save messages
-        self.chat.append_user_message_with_metadata(
-            content=prompt,
-            state="external"
-        )
+        self.chat.append_user_message_with_metadata(content=prompt, state="external")
         self.chat.append_assistant_message_with_metadata(
             content=answer,
             state="external",
@@ -327,8 +279,10 @@ class Agent:
         )
 
         # Update dropbox metadata
-        print("Updataing dropbox metadata...")
-        self.file_reader._add_metadata_and_summary(file_paths)
+        if file_paths:
+            logger.info("Updating dropbox metadata for: %s", str(file_paths))
+            print("Updataing dropbox metadata...")
+            self.file_reader._add_metadata_and_summary(file_paths)
         
         self.memory.toggle_auto_store_memory_entry(
             enable_auto_memory_store= True,
@@ -336,7 +290,13 @@ class Agent:
             context=self.chat.to_llm()
         )
 
+        self.memory.toggle_auto_store_memory_entry(
+            enable_auto_memory_store= True,
+            model_max_tokens=self.get_model_max_tokens,
+            context=self.chat.to_llm()
+        )
+
+        return
         # ==============
         # // End here //
         # ==============
-        return

@@ -6,7 +6,10 @@ from datetime import datetime, timezone
 
 from src import config
 from src.agent.llm import LLM
+from src.logger import get_logger
 
+
+logger = get_logger(__name__)
 
 TOOL_LIST = Literal["web_search", "read_files"]
 
@@ -37,11 +40,13 @@ class Chat:
                 if messages[0]["content"] != self.prompt:
                     messages[0]["content"] = self.prompt
                     self.active_conv_path.write_text(json.dumps(messages, indent=4))
+                    logger.info("Updated system prompt in active conversation file: %s", self.active_conv_path)
             return messages
 
         else:
             # Start fresh, if system prompt file exist,
             # load system prompt only.
+            logger.info("Session does not exist, initiating active conversation (session: %s)", self.session or "default_session")
             return [{"role": "system", "content": self.prompt, "state": "internal"}]
 
     def all(self) -> list[dict]:
@@ -58,10 +63,11 @@ class Chat:
             for msg in self._messages
         ]
 
-    def clear(self):
+    def clear_active_conv(self):
         """Empty stored messages and clear contents in path."""
         self._messages = []
         self.active_conv_path.write_text("[]")
+        logger.info("Cleared contents in active conversation file (session: %s)", self.active_conv_path)
 
     def save(self, msg: dict | None = None):
         """
@@ -76,29 +82,34 @@ class Chat:
         # Note: File can still be created with no questions asked.
         self.active_conv_path.parent.mkdir(parents=True, exist_ok=True)
         self.active_conv_path.write_text(json.dumps(self._messages, indent=4))
+        logger.info("Updated active conversation file: %s", self.active_conv_path)
 
         # Chat history:
         # Note: Only called when message is present.
         if msg:
             self.chat_history_path.parent.mkdir(parents=True, exist_ok=True)
-
             with open(self.chat_history_path, "a") as f:
                 f.write(json.dumps(msg, indent=4) + "\n")
+                logger.info("New message added to chat history: %s", self.chat_history_path)
 
-    def clear_active_conv(self) -> str:
+    def delete_active_conv(self) -> str:
         """Deleted conversation file."""
         if self.active_conv_path.exists():
             self.active_conv_path.unlink()
+            logger.info("Deleted active conversation: %s", self.active_conv_path)
             return f"Deleted session {self.active_conv_path.name}"
         else:
+            logger.error("Failed to delete active conversation: File '%s' not found.", self.active_conv_path)
             return f"Error: Session {self.active_conv_path.name} not found."
 
-    def clear_chat_history(self) -> str:
+    def delete_chat_history(self) -> str:
         """Delete chat history file."""
         if self.chat_history_path.exists():
             self.chat_history_path.unlink()
+            logger.info("Deleted chat history: %s", self.chat_history_path)
             return f"Deleted session {self.chat_history_path.name}'s chat history."
         else:
+            logger.error("Failed to delete chat history: File '%s' not found.", self.chat_history_path)
             return f"Error: Session {self.chat_history_path.name}'s chat history not found."
 
     # ========================================================
@@ -117,18 +128,13 @@ class Chat:
         }
         """
         if attachments:
-
             attachment_dict = {}
-
             for attachment in attachments:
-
                 mime_type, _ = mimetypes.guess_type(attachment)
-                
                 attachment_dict[attachment.name] = {
                     "mime_type": mime_type,
                     "size_bytes": attachment.stat().st_size if attachment.exists else 0
                 }
-
             return attachment_dict
 
         return {"": {"": []}}
@@ -221,6 +227,7 @@ class Chat:
 
         self._messages.append(msg)
         self.save(msg)
+        logger.info("Appended user message with metadata (session: %s)", self.session or "default_session")
 
     def append_assistant_message_with_metadata(
         self,
@@ -258,6 +265,7 @@ class Chat:
 
         self._messages.append(msg)
         self.save(msg)
+        logger.info("Appended assistant response and metadata (session: %s)", self.session or "default_session")
 
     def append_system_prompt(self, content: str):
         """Add system prompt to messages."""
@@ -265,6 +273,8 @@ class Chat:
 
         self._messages.append(msg)
         self.save(msg)
+        logger.info(f"Session's system prompt has been updated.")
+        logger.info("Updated system prompt (session: %s)", self.session or "default_session")
 
     # ///////////////////////////////////////////////////////////////
     # UPDATE REQUIRED
@@ -298,7 +308,8 @@ class Chat:
         # If error occurs (model returns nothing or
         # suspiciously low token count), keep history.
         if not content.strip() or output_tokens <= 5:
-            print("Error: Compression failed")
+            print("Warning: Compression failed")
+            logger.warning("Active conversation compression aborted: Model returned invalid output (output_tokens=%d). Context left unchanged.", output_tokens)
             return
 
         instruction = (
@@ -312,7 +323,7 @@ class Chat:
             + content
         )
 
-        self.clear()
+        self.clear_active_conv()
         self.append_system_prompt(self.prompt)
         self.append_user_message_with_metadata(
             content=instruction,
@@ -324,6 +335,8 @@ class Chat:
             prompt_tokens=prompt_tokens,
             output_tokens=output_tokens
         )
+        logger.info(f"{self.active_conv_path.name}'s active conversation has been compressed.")
+        logger.info("Compressed active conversation for session: %s", self.session or "default_session")
 
         # ///////////////////////////////////////////////////////////
         # if max_token < a higher set number (~ 7-13B model max)
