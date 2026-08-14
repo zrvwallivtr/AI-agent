@@ -1,17 +1,10 @@
 import tiktoken
 
+from src import models_database
 
-MODEL_MAX = {
-    # Conversational / Generation Models
-    "gemma3:1b":            4096,
-    "ministral_3b:latest":  4096,
+#from src.logger import get_logger
 
-    # Embedding Models
-    "nomic-embed-text": 2048,
-    "embeddinggemma":   2048,
-    "all-minilm":       512,
-}
-
+#logger = get_logger(__name__)
 
 # chat_tokens = Tokens(MODEL, MODEL_MAX_TOKENS)
 # pm_tokens = Tokens(PM_MODEL, PM_MAX_TOKENS)
@@ -29,8 +22,8 @@ class Tokens:
             self.model_max_tokens = model_max_tokens
 
         # Fallback to predefined list
-        elif self.model in MODEL_MAX:
-            self.model_max_tokens = MODEL_MAX[model]
+        elif self.model in models_database.MODEL_MAX:
+            self.model_max_tokens = models_database.MODEL_MAX[model]
 
         # Neither option is available
         else:
@@ -46,9 +39,14 @@ class Tokens:
         try:
             # Looks up exact token vocabulary mapped to specific model name
             self.encoder = tiktoken.encoding_for_model(self.model)
+            # logger.info("Loaded exact token encoding for model: %s", self.model)
         except KeyError:
             # If unknown, fall back to 'cl100k_base'
             self.encoder = tiktoken.get_encoding("cl100k_base")
+            # logger.warning(
+            #     "Exact token encoding not found for model '%s'. Falling back to 'cl100k_base'",
+            #     self.model
+            # )
 
     def estimate(self, text: str) -> int:
         """Estimates token count base on charater length (4 chars ~ 1 token)."""
@@ -65,6 +63,7 @@ class Tokens:
     def count_string_tokens(self, text: str) -> int:
         """Counts tokens in string."""
         if not text:
+            # logger.warning("Cannot count tokens in string: No text provided")
             return 0
         return len(self.encoder.encode(text))
 

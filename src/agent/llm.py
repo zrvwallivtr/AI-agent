@@ -57,9 +57,8 @@ def get_trimmed_previous_entries(context: list[dict]) -> str:
 
         # "assistant" then "user"
         if last_two_roles == ["assistant", "user"]:
-            user_msg = last_two_entries[1]
             return "\n".join(
-                f"{user_msg.get('role', 'user')}: {user_msg.get('content', '')}"
+                f"{msg.get('role', 'user')}: {msg.get('content', '')}"
                 for msg in context[:-1] # Excluding the last one entry
                 if msg.get("role") != "system" # Excluding system prompt
             )
@@ -135,24 +134,28 @@ class LLM:
         system_prompt: str,
         prompt: str,
         context: list[dict] | None = None
-    ) -> ollama.ChatResponse:
+    ) -> tuple[str, int, int]:
         """Combines a system prompt, context and question with model response."""
         if context:
-            formatted_question              = f"# User input\n{prompt}"
             context_without_system_prompt   = [msg for msg in context if msg["role"] != "system"]
-            messages                        = [LLM.system(system_prompt)] + context_without_system_prompt + [LLM.user(formatted_question)]
+            messages                        = [LLM.system(system_prompt)] + context_without_system_prompt + [LLM.user(prompt)]
 
         else:
             messages = [LLM.system(system_prompt)] + [LLM.user(prompt)]
 
-        return ollama.chat(model=model, messages=messages)
+        response        = ollama.chat(model=model, messages=messages)
+        content         = response.message.content
+        prompt_tokens   = getattr(response, "prompt_eval_cound", 0) or 0
+        output_tokens   = getattr(response, "eval_cound", 0) or 0
+
+        return content, prompt_tokens, output_tokens
 
     # =====================================================================
     # Memory response formats
     # =====================================================================
 
     @staticmethod
-    def response_memory_recall(
+    def response_memory_recall_format(
         model: str,
         system_prompt: str,
         recalled: str,
@@ -161,39 +164,11 @@ class LLM:
     ) -> ollama.ChatResponse:
         """Model reponse with memory recall system prompt and format."""
         if context:
-            formatted_question              = f"{recalled}\n{prompt}"
+            formatted_prompt                = f"# User prompt\n\n{prompt}\n\n---\n\n{recalled}"
             context_without_system_prompt   = [msg for msg in context if msg["role"] != "system"]
-            messages                        = [LLM.system(system_prompt)] + context_without_system_prompt + [LLM.user(formatted_question)]
+            messages                        = [LLM.system(system_prompt)] + context_without_system_prompt + [LLM.user(formatted_prompt)]
 
         else:
             messages = [LLM.system(system_prompt)] + [LLM.user(prompt)]
 
-        response        = ollama.chat(model=model, messages=messages)
-        content         = response.message.content
-        prompt_tokens   = getattr(response, "prompt_eval_cound", 0) or 0
-        output_tokens   = getattr(response, "eval_cound", 0) or 0
-
         return LLM.model_response(messages, model)
-
-    @staticmethod
-    def response_auto_memory_store_format(
-        model: str,
-        system_prompt: str,
-        context: list[dict]
-    ) -> tuple[str, int, int]:
-        """
-        Combines a system prompt, context and question with model response,
-        the formatting is modified suitable for storing memory functions.
-        """
-        trimmed_previous_entries_str    = get_trimmed_previous_entries(context)
-        last_two_entries_str            = get_last_two_entries_roles(context)
-
-        formatted_prompt    = f"# All previous conversations\n{trimmed_previous_entries_str}\n\n---\n\n" + f"# New conversations\n{last_two_entries_str}"
-        messages            = [LLM.system(system_prompt)] + [LLM.user(formatted_prompt)]
-
-        response        = ollama.chat(model=model, messages=messages)
-        content         = response.message.content
-        prompt_tokens   = getattr(response, "prompt_eval_cound", 0) or 0
-        output_tokens   = getattr(response, "eval_cound", 0) or 0
-
-        return content, prompt_tokens, output_tokens

@@ -23,7 +23,8 @@ CATEGORIES = list(get_args(CATEGORY_TYPES))
 
 
 class Memory:
-    def __init__(self, project: str | None = None):
+    def __init__(self, session: str | None = None, project: str | None = None):
+        self.session            = session
         self.project            = project
         self.model              = config.MODEL
         self.embed_model        = config.EMBED_MODEL
@@ -31,6 +32,7 @@ class Memory:
         self.mem_manual_prompt  = config.MEM_MANUAL_PROMPT
         self.path               = config.CHROMADB_DIR
         self.tokens             = Tokens(self.embed_model)
+        self.chat               = Chat(session=session)
 
         # Initialize local ChromaDB client
         self.chroma_client  = chromadb.PersistentClient(path=self.path)
@@ -202,10 +204,26 @@ class Memory:
             f"- [{entry['category']}] {entry['content']}"
             for entry in memory
         )
-        new_message = f"## Relevant context from memory\n\n{memory_text}\n\n---\n\n"
+        new_message = f"# Relevant context from memory\n\n{memory_text}"
         logger.info("Retrieved %d relevant memory entry(s)", len(memory))
 
         return new_message
+
+    def toggle_auto_retrive_memory_entry(
+        self,
+        enable_auto_memory_retrieve: bool,
+        prompt: str
+    ) -> str:
+        """
+        Auto memory entry ability, returns memory entries if its toggled on.
+
+        Model decides from {prompt} --> {memory_entries}
+        """
+        if enable_auto_memory_retrieve == True:
+            return self.add_memory_entries(prompt)
+
+        else:
+            return ""
 
     def get_entries_by_ids(self, ids: list[str] | None) -> list[dict]:
         """Retrieves documents and metadata directly from ChromaDB using IDs."""
@@ -271,7 +289,6 @@ class Memory:
 
         return target_id, matched_content
 
-
     def delete_from_db(self, ids: list[str]):
         """Removes a list vector ID reference key directly from database."""
         if not ids:
@@ -280,10 +297,10 @@ class Memory:
         logger.info("Deleted %d memory entry(s) from database: ids=%s", len(ids), ids)
 
     # ============================================================
-    # Model integration
+    # Store memory
     # ============================================================
 
-    def extract_entries_and_store_to_db(
+    def extract_and_store_memory_entries(
         self, 
         context: list[dict], 
         source: Literal["manual", "automatic"],
@@ -296,26 +313,22 @@ class Memory:
         Depends of the system prompt to decide whether to
         extract memory automatically or manually.
         """
-        # Extract memory manually (User ask model with prompt)
         if source == "manual":
-            system_prompt = self.mem_manual_prompt
-
-        # Extract memory automatically
+            system_prompt = self.mem_manual_prompt # User ask model with prompt
         else:
-            system_prompt = self.mem_prompt
+            system_prompt = self.mem_prompt # Extract memory automatically
 
         try:
             # Extract memory
-            response = LLM.response_auto_memory_store_format(
+            previous_entries = self.chat.get_trimmed_previous_entries(context)
+            last_two_entries = self.chat.get_last_two_entries_roles(context)
+            formatted_prompt = f"# All previous conversations\n\n{previous_entries}\n\n---\n\n# New conversations\n\n{last_two_entries}"
+            response = LLM.response_with_new_sys_prompt_and_context(
                 model=self.model,
                 system_prompt=system_prompt,
-                context=context,
+                prompt=formatted_prompt
             )
             extracted_output, prompt_tokens, output_tokens = response
-
-            if not extracted_output or not extracted_output.strip():
-                logger.info("No entries found during memory extraction")
-                return [], 0, 0
 
             created_ids = self._format_and_append_to_db(extracted_output, source)
             if created_ids:
@@ -327,35 +340,20 @@ class Memory:
             logger.error("Memory extraction synthesis failed: error=%s", e, exc_info=True)
             return [], 0, 0
 
-    def toggle_auto_retrive_memory_entry(
-        self,
-        enable_auto_memory_retrieve: bool,
-        prompt: str
-    ) -> str:
-        """
-        Auto memory entry ability, returns memory entries if its toggled on.
-
-        Model decides from {prompt} --> {memory_entries}
-        """
-        if enable_auto_memory_retrieve == True:
-            return self.add_memory_entries(prompt)
-
-        else:
-            return ""
-
-    def toggle_auto_store_memory_entry(
+    def toggle_auto_store_memory_entries(
         self,
         enable_auto_memory_store: bool,
         model_max_tokens: int,
         context: list[dict],
     ):
+        """Auto store memory, should be at the end of every conversations."""
         if enable_auto_memory_store == False:
             return
 
         if model_max_tokens < config.AUTO_MEMORY_STORE_TOKENS:
             return
 
-        created_ids, prompt_tokens, output_tokens = self.extract_entries_and_store_to_db(
+        created_ids, prompt_tokens, output_tokens = self.extract_and_store_memory_entries(
             context=context,
             source= "automatic"
         )

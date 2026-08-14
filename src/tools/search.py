@@ -151,14 +151,12 @@ class SearchAgent:
         Query model to decide whether a question requires search or not.
         Returns either 'True' or 'False'.
         """
-        response = LLM.response_with_new_sys_prompt_and_context(
+        output, prompt_tokens, output_tokens = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
             system_prompt=self.search_or_not_prompt,
             context=context,
             prompt=prompt
         )
-
-        output = response.message.content
 
         if 'true' in output.lower():
             return True
@@ -198,14 +196,14 @@ class SearchAgent:
         # Update {{current_date}} in 'query_prompt' to actual date
         live_query_prompt = self.query_prompt.replace("{{current_date}}", current_date)
 
-        response = LLM.response_with_new_sys_prompt_and_context(
+        query, prompt_tokens, output_tokens = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
             system_prompt=live_query_prompt,
             context=context,
             prompt=prompt
         )
 
-        return self.search_query_check(response.message.content)
+        return self.search_query_check(query)
 
     def web(
         self,
@@ -245,7 +243,7 @@ class SearchAgent:
 
             # print(search_results)
 
-            query_message = LLM.user(f"# Context from web search\n\n{search_results}\n\n---\n\nUser question: {prompt}") # This won't be saved in chat
+            query_message = LLM.user(f"# Context from web search\n\n{search_results}\n\n---\n\n# User prompt\n\n{prompt}") # This won't be saved in chat
 
             messages = context + [query_message]
 
@@ -289,7 +287,7 @@ class SearchAgent:
         prompt: str,
         memory_entries: str,
         file_contents: str,
-        enable_extra_context: bool,
+        enable_attachments: bool,
         added_file_contents: str,
         enable_auto_web_search: bool,
     ) -> tuple[str, list[dict[str, list[str]]], bool]:
@@ -306,7 +304,7 @@ class SearchAgent:
             # Enable auto web search
             search_context = messages
 
-            if enable_extra_context == True:
+            if enable_attachments == True:
                 search_context.append({
                     "role": "user",
                     "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n--\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# User input\n\n{prompt}\n\n## Uploaded files\n\n{added_file_contents}"

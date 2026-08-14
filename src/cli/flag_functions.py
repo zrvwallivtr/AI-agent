@@ -138,7 +138,7 @@ class File:
         agent   = Agent(model=model, session=self.session, project=project)
         answer  = agent.ask(
             prompt=prompt,
-            extra_context=True,
+            enable_attachments=True,
             file_paths=file_paths
         )
         return

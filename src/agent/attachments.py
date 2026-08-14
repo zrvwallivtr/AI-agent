@@ -12,19 +12,19 @@ from src.logger import get_logger
 logger = get_logger(__name__)
 
 
-class ExtraContext:
+class Attachments:
     def __init__(self, session: str | None = None):
         self.session        = session
         self.file_reader    = FileReader(session=session)
 
-    def all(
+    def files(
             self,
             messages: list[dict],
-            enable_extra_context: bool,
+            enable_attachments: bool,
             file_paths: list[Path] | None
     ) -> str:
-        """Extract content in file paths."""
-        if enable_extra_context == False:
+        """Return Attachment(s) contents"""
+        if enable_attachments == False:
             return ""
 
         if not file_paths:

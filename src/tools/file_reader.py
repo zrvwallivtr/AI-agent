@@ -18,6 +18,10 @@ from src.agent.llm import LLM
 from src.agent.chat import Chat
 from src.agent.tokens_handler import Tokens
 from src import config
+from src.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 def session_path(session: str | None = None) -> Path:
@@ -44,6 +48,8 @@ class FileReader:
         self,
         session: str | None = None,
     ):
+        self.session            = session
+        self.session_name       = self.session or "default_session"
         self.chat               = Chat(session=session)
         self.model              = config.MODEL
         self.tokens             = Tokens(model=self.model)
@@ -100,9 +106,12 @@ class FileReader:
     def _read_txt(self, path: Path, file_type: str = "txt") -> str:
         """Reads plain text files using UTF-8 validation."""
         try:
-            return path.read_text(encoding="utf-8", errors="ignore")
+            content = path.read_text(encoding="utf-8", errors="ignore")
+            logger.info("Extracted '%s' file content as plain text: path='%s'", file_type, path)
+            return content
         except Exception as e:
-            return f"Error reading {file_type} file '{path}': {str(e)}"
+            logger.error(f"Failed to read '%s' file: path='%s', error=%s", file_type, path, e)
+            return f"Failed to extract file content"
 
     def _read_csv(self, path: Path) -> str:
         """Reads csv as plain text files."""
@@ -124,10 +133,12 @@ class FileReader:
                         clean_row = [str(cell).strip() if cell is not None else "" for cell in row]
                         excel_text.append(" | ".join(clean_row))
 
+            logger.info("Extracted text content from xlsx file row by row: path='%s', sheets=%d", path, len(wb.sheetnames))
             return "\n".join(excel_text)
 
         except Exception as e:
-            return f"Error reading xlsx file '{path}': {str(e)}"
+            logger.error("Failed to read xlsx file: path=%s, error=%s", path, e)
+            return f"Failed to extract file content"
 
     def _read_yaml(self, path: Path) -> str:
         return self._read_txt(path, "yaml")
@@ -147,10 +158,12 @@ class FileReader:
             with pdfplumber.open(path) as pdf:
                 pages = [page.extract_text() for page in pdf.pages]
                 pages = [p for p in pages if p]
+                logger.info("Extracted PDF text content page by page: path='%s', pages=%d", path, len(pdf.pages))
                 return "\n\n".join(pages)
 
         except Exception as e:
-            return f"Error reading PDF file '{path}': {str(e)}"
+            logger.error("Failed to read PDF file: path=%s, error=%s", path, e)
+            return f"Failed to extract file content"
     
     def _read_docx(self, path: Path) -> str:
         """Extracts structural text elements line by line from document."""
@@ -162,11 +175,13 @@ class FileReader:
                 clean_text = para.text.strip()
                 if clean_text:
                     paragraphs.append(clean_text)
-
+            
+            logger.info("Extracted docx text content line by line: path='%s', paragraphs=%d", path, len(paragraphs))
             return "\n".join(paragraphs)
 
         except Exception as e:
-            return f"Error reading docx file '{path}': {str(e)}"
+            logger.error("Failed to read docx file: path='%s', error=%s", path, e)
+            return f"Failed to extract file content"
 
     def _read_epub(self, path: Path) -> str:
         """Extracts plain text blocks from internal EPUB XHTML document payloads."""
@@ -187,9 +202,16 @@ class FileReader:
                     if plain_text:
                         chapters_text.append(plain_text)
 
+            logger.info(
+                "Extracted plain text blocks from EPUB file: path='%s', chapters=%d",
+                path,
+                len(chapters_text)
+            )
             return "\n\n".join(chapters_text)
+
         except Exception as e:
-            return f"Error reading EPUB file '{path}': {str(e)}"
+            logger.error("Failed to read EPUB file: path='%s', error=%s", path, e)
+            return f"Failed to extract file content"
 
     def _read_code(self, path: Path) -> str:
         """Reads code files and wraps them in markdown code fences."""
@@ -207,17 +229,33 @@ class FileReader:
         if not self.dropbox_dir.exists():
             self.dropbox_dir.mkdir(parents=True, exist_ok=True)
 
-        path = self.dropbox_dir / "file_metadata.json"
-
-        if path.exists():
+        if self.metadata_path.exists():
             try:
-                return json.loads(path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
+                metadata = json.loads(self.metadata_path.read_text(encoding="utf-8"))
+                logger.info(
+                    "%s session dropbox metadata extracted: path='%s'",
+                    self.session_name,
+                    self.metadata_path
+                )
+                return metadata
+
+            except json.JSONDecodeError as e:
+                logger.error(
+                    "Failed to decode JSON payload in '%s': line=%d, col=%d, error=%s",
+                    self.metadata_path,
+                    e.lineno,
+                    e.colno,
+                    e.msg
+                )
                 return {}
 
         else:
             default_data = {}
-            path.write_text(json.dumps(default_data, indent=4), encoding="utf-8")
+            self.metadata_path.write_text(json.dumps(default_data, indent=4), encoding="utf-8")
+            logger.info(
+                "%s session metadata file does not exists. Created new file",
+                self.session_name
+            )
             return default_data
 
     def _add_file_metadata(self, filename: str, summary: str):
@@ -257,15 +295,35 @@ class FileReader:
 
         self.dropbox_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_path.write_text(json.dumps(self.file_metadata, indent=4), encoding="utf-8")
+        logger.info(
+            "%s metadata appended to %s sessin file metadata: path='%s'",
+            filename,
+            self.session_name,
+            self.metadata_path
+        )
 
     def _get_filenames_from_metadata(self) -> list[str]:
         """Return all filenames from 'file_metadata.json'."""
         if self.metadata_path.exists():
             try:
-                data = json.loads(self.metadata_path.read_text(encoding="utf-8"))
-                return list(data.keys())
+                data        = json.loads(self.metadata_path.read_text(encoding="utf-8"))
+                filenames   = list(data.keys())
+                logger.info(
+                    "Retrived %d filename(s) from %s session file metadata: path='%s'",
+                    len(filenames),
+                    self.session_name,
+                    self.metadata_path
+                )
+                return filenames
 
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logger.error(
+                    "Failed to decode JSON payload in '%s': line=%d, col=%d, error=%s",
+                    self.metadata_path,
+                    e.lineno,
+                    e.colno,
+                    e.msg
+                )
                 return []
 
         return []
@@ -273,13 +331,18 @@ class FileReader:
     def _files_not_in_file_metadata(self) -> list[str]:
         """
         Return a list of available files that is
-        not in 'file_data.json' (without summary).
+        not in 'file_metadata.json' (without summary).
         """
-        files_with_summary = self._get_filenames_from_metadata()
-        available_files = self.list_available_files()
+        files_with_summary      = self._get_filenames_from_metadata()
+        available_files         = self.list_available_files()
+        files_without_summary   = list(set(available_files) - set(files_with_summary))
 
-        files_without_summary = list(set(available_files) - set(files_with_summary))
-
+        logger.info(
+            "%d file(s) not in %s session file metadata: path='%s'",
+            len(files_without_summary),
+            self.session_name,
+            self.metadata_path
+        )
         return files_without_summary
 
     # ================================================
@@ -289,6 +352,11 @@ class FileReader:
     def list_available_files(self) -> list[str]:
         """Return a list of files currently in the directory."""
         if not self.dropbox_dir.exists():
+            logger.warning(
+                "%s session dropbox not found: path='%s'",
+                self.session_name,
+                self.dropbox_dir
+            )
             return []
 
         available_files = []
@@ -296,23 +364,37 @@ class FileReader:
         for file in self.dropbox_dir.iterdir():
             if file.is_file() and file.name != "file_metadata.json":
                 available_files.append(file.name)
-
+        logger.info(
+            "%d file(s) detected in %s session dropbox: path='%s'",
+            len(available_files),
+            self.session_name,
+            self.dropbox_dir
+        )
         return available_files
 
-    def store_file_in_dropbox(self, content: str, file_path: Path) -> str:
+    def store_file_in_dropbox(self, content: str, file_path: Path):
         """Store file contents in the dropbox."""
         # Add line to manage same filename error
         try:
             self.dropbox_dir.mkdir(parents=True, exist_ok=True)
             path = self.dropbox_dir / file_path.name
             path.write_text(content, encoding="utf-8")
-
-            return ""
+            logger.info(
+                "'%s' stored into %s session dropbox: path='%s'",
+                file_path.name,
+                self.session_name,
+                self.dropbox_dir
+            )
 
         except Exception as e:
-            return f"Failed to cache context in workspace storage: {e}"
+            logger.error(
+                "Failed to cache content in %s session dropbox: path='%s', error=%s",
+                self.session_name,
+                self.dropbox_dir,
+                e
+            )
 
-    def clear_session_dropbox(self) -> str:
+    def clear_session_dropbox(self):
         """Remove session dropbox directory when cleaning history."""
         if self.dropbox_dir.exists():
             for child in self.dropbox_dir.iterdir():
@@ -320,10 +402,12 @@ class FileReader:
                     child.unlink()
 
             self.dropbox_dir.rmdir()
-            return f"Cleared all files in '{self.dropbox_dir}'."
+            logger.info("Cleared all files dropbox: path='%s'", self.dropbox_dir)
 
-        return f"Error: '{self.dropbox_dir}' not found."
-
+        logger.error(
+            "'%s' not found. Failed to clear session dropbox",
+            self.dropbox_dir
+        )
 
     # ================================================
     # File contents
@@ -334,7 +418,8 @@ class FileReader:
         ext = file_path.suffix.lower()
 
         if not file_path.exists():
-            return f"Error: File {file_path} not found.", False
+            logger.warning("Failed to load file content: '%s' not found")
+            return "", False
 
         # Route to correct parser, fallback to plain text if unknown
         parser = self.formats.get(ext, self._read_txt)
@@ -351,7 +436,10 @@ class FileReader:
             content, path_exists = self.load_file_content(path)
 
             if not path_exists:
-                print(f"Warning: Error reading file {path}, file not found or unreadable, skipping.")
+                logger.warning(
+                    "Failed to read file '%s': File not found or unreadable. Skipping",
+                    path
+                )
                 continue
 
             # Format individual file block
@@ -363,7 +451,11 @@ class FileReader:
             blocks.append(block)
 
         if not blocks:
-            return "No valid file context found."
+            logger.warning(
+                "Failed to read file(s): No valid content found in %s",
+                str(file.name for file in file_paths)
+            )
+            return ""
 
         return "\n\n".join(blocks)
 
@@ -381,15 +473,15 @@ class FileReader:
             f"File content:\n"
             f"{content}\n\n"
         )
+        logger.info("Formatted file content: path='%s'", file_path)
 
-        response = LLM.response_with_new_sys_prompt_and_context(
+        summary, prompt_tokens, output_tokens = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
             system_prompt=self.gen_summary_prompt,
             prompt=formatted_file_content
         )
 
-        summary = response.message.content
-
+        logger.info("Model generated short summary for file: path='%s'", file_path)
         return summary
 
     def _add_metadata_and_summary(self, file_paths: list[Path]):
@@ -398,6 +490,7 @@ class FileReader:
             filename = path.name
             summary = self._generate_short_summary(path)
             self._add_file_metadata(filename, summary)
+            logger.info("Added summary and metadata: file='%s'", filename)
 
     def _structured_file_string(self, filename: str, summary: str) -> str:
         """Format contents for model to read."""
@@ -409,14 +502,12 @@ class FileReader:
 
     def require_file_or_not(self, context: list[dict], prompt: str) -> bool:
         """Query model to decide if file context is needed, return 'True' or 'False' only."""
-        response = LLM.response_with_new_sys_prompt_and_context(
+        output, prompt_tokens, output_tokens = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
             system_prompt=self.file_or_not_prompt,
             prompt=prompt,
             context=context
         )
-
-        output = response.message.content
 
         if 'true' in output.lower():
             return True
@@ -428,22 +519,21 @@ class FileReader:
         Ask model to choose from available in current session to get relevant context,
         formats model output to get clean lists of data.
         """
-        response = LLM.response_with_new_sys_prompt_and_context(
+        list_of_files, prompt_tokens, output_tokens = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
             system_prompt=self.file_list_prompt,
             prompt=available_files_prompt,
             context=context
         )
 
-        list_of_files = response.message.content
+        logger.info("Model decided to retrieve %d file(s)", len(list_of_files))
 
-        content                 = response.message.content
         found_file_paths        = []
         not_found_file_paths    = []
 
         # Reformats generated string to a clean list
         parsed_names = []
-        for token in re.split(r"[,\n]", content):
+        for token in re.split(r"[,\n]", list_of_files):
             name = re.sub(r"[*'\"\'\-]", "", token).strip()
             if name:
                 parsed_names.append(name)
@@ -457,10 +547,11 @@ class FileReader:
             else:
                 not_found_file_paths.append(file)
 
+        logger.warning("%d file(s) not found in session dropbox", len(not_found_file_paths))
         return found_file_paths, not_found_file_paths
 
 
-    def _file_context(self) -> str:
+    def _get_available_file_with_summary(self) -> str:
         """
         Steps:
         1. Add summary and metadata that are not in 'file_metadata.json'.
@@ -468,6 +559,7 @@ class FileReader:
         3. Format filenames and summary to a string for model to read.
         """
         # Add summary and metadata if not exists
+        logger.info("Checking session dropbox metadata")
         files_without_summary = self._files_not_in_file_metadata()
         file_paths = [self.dropbox_dir / file for file in files_without_summary]
         self._add_metadata_and_summary(file_paths)
@@ -475,9 +567,11 @@ class FileReader:
         # Re-sync metadata
         if hasattr(self, "_load_file_metadata"):
             self.file_metadata = self._load_file_metadata() or {}
+        logger.info("Added %d file(s) into dropbox metadata", len(files_without_summary))
 
         # List all available files
         filenames = self.list_available_files()
+        logger.info("Detected %d file(s) in session dropbox", len(filenames))
 
         # Filenames with its corresponding summary
         blocks = []
@@ -489,6 +583,7 @@ class FileReader:
         
         entries = "\n\n".join(blocks)
 
+        logger.info("Retrieved all available file(s) and summary(s)")
         return f"# All available files\n\n{entries}"
 
     # ==================================================
@@ -500,8 +595,8 @@ class FileReader:
             messages: list[dict],
             prompt: str,
             memory_entries: str,
-            enable_extra_context: bool,
-            added_file_contents: str,
+            enable_attachments: bool,
+            attachments_content: str,
             enable_auto_read_dropbox: bool
     ) -> tuple[str, list[Path], bool]:
         """
@@ -513,20 +608,21 @@ class FileReader:
 
             # Return nothing if dropbox is empty
             if _is_dir_empty(self.dropbox_dir):
+                logger.info("No extra file context retrieved: Session dropbox is empty")
                 return "", [], False
 
-            if enable_extra_context == True:
-                combined_prompt = f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# User prompt\n\n{prompt}\n\n## Uploaded file\n\n{added_file_contents}"
+            # Prepare context for model to decide require file or not
+            if enable_attachments == True:
+                combined_prompt = f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# User prompt\n\n{prompt}\n\n## Attached file\n{attachments_content}"
             else:
                 combined_prompt = f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# User prompt\n\n{prompt}"
+
             require_file = self.require_file_or_not(messages, combined_prompt)
-
             if require_file == True:
-                available_files_prompt          = self._file_context()
+                logger.info("Model decided extra context from session dropbox needed")
+                available_files_prompt          = self._get_available_file_with_summary()
                 found_files, not_found_files    = self.get_filenames(messages, available_files_prompt)
-
-                # turn found_files to paths
-                found_file_paths = [self.dropbox_dir / file for file in found_files]
+                found_file_paths                = [self.dropbox_dir / file for file in found_files] # Turn found_files to paths
                 return self._load_contents_from_file_list(found_file_paths), found_files, True
 
             return "", [], False
@@ -545,7 +641,7 @@ class FileReader:
             file_paths: list[Path] | None,
     ) -> str:
         """Read all files contents from a list of filenames."""
-        labelled_content = ["Here are the required context:\n"]
+        labelled_content = []
 
         if file_paths:
 
@@ -558,7 +654,7 @@ class FileReader:
                     return ""
 
                 block = (
-                    f"### Filename: {filename}\n"
+                    f"## Filename: {filename}\n"
                     f"File content:\n"
                     f"{file_content}\n\n"
                 )

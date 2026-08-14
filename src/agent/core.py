@@ -6,7 +6,7 @@ from src.agent.tokens_handler import Tokens
 from src.agent.chat import Chat
 from src.agent.memory import Memory
 from src.agent.cmd_functions import Command
-from src.agent.extra_context import ExtraContext
+from src.agent.attachments import Attachments
 from src.tools.search import is_connected, SearchAgent
 from src.tools.file_reader import FileReader
 from src.logger import get_logger
@@ -67,7 +67,7 @@ class Agent:
         self.memory         = Memory(project=project)
         self.file_reader    = FileReader(session=session)
         self.command        = Command(model=model, session=session, project=project)
-        self.extra_context  = ExtraContext(session=session)
+        self.attachments    = Attachments(session=session)
         self.search_agent   = SearchAgent()
 
     @property
@@ -95,7 +95,7 @@ class Agent:
                     f"Run 'ollama pull {model}' to install model."
                 )
             known_models = set(local_models) - set(unknown_models)
-            logger.error("Fetched all local models:\n Known models = %s\n Unknown model = %s", known_models, unknown_models)
+            logger.info("Fetched all local models:\n Known models = %s\n Unknown model = %s", known_models, unknown_models)
 
         except Exception as e:
             # If ollama is down
@@ -133,7 +133,7 @@ class Agent:
     def ask(
         self,
         prompt: str,
-        enable_extra_context: bool = False,
+        enable_attachments: bool = False,
         enable_auto_memory_retrieve: bool = config.ENABLE_AUTO_MEMORY_RETRIEVE,
         enable_auto_memory_store: bool = config.ENABLE_AUTO_MEMORY_STORE,
         enable_auto_web_search: bool = config.ENABLE_AUTO_WEB_SEARCH,
@@ -174,7 +174,11 @@ class Agent:
 
             if cmd == "/memorise":
                 logger.info("'/memorise' command triggered")
-                response = self.command.cmd_memorise(prompt=user_prompt)
+                response = self.command.cmd_memorise(
+                    prompt=user_prompt,
+                    enable_attachments=enable_attachments,
+                    file_paths=file_paths
+                )
 
                 if response:
                     print(response)
@@ -187,14 +191,9 @@ class Agent:
                 logger.info("'/recall' command triggered")
                 # User's question and agent's response were saved
                 response = self.command.cmd_recall(
-                    model_max_tokens=self.get_model_max_tokens,
                     prompt=user_prompt,
-                    enable_extra_context=enable_extra_context,
+                    enable_attachments=enable_attachments,
                     enable_auto_memory_retrieve=enable_auto_memory_retrieve,
-                    enable_auto_memory_store=enable_auto_memory_store,
-                    enable_auto_web_search=enable_auto_web_search,
-                    enable_auto_read_dropbox=enable_auto_read_dropbox,
-                    limit=4,
                     file_paths=file_paths
                 )
 
@@ -208,11 +207,15 @@ class Agent:
             if cmd == "/search":
                 logger.info("'/search' command tirggered")
                 # User's question were saved
-                response = self.command.cmd_search(user_prompt)
+                response = self.command.cmd_search(
+                    prompt=user_prompt,
+                    enable_attachments=enable_attachments,
+                    file_paths=file_paths
+                )
 
                 if response:
                     print(response)
-                self.memory.toggle_auto_store_memory_entry(
+                self.memory.toggle_auto_store_memory_entries(
                     enable_auto_memory_store= True,
                     model_max_tokens=self.get_model_max_tokens,
                     context=self.chat.to_llm()
@@ -224,9 +227,9 @@ class Agent:
 
         messages = self.chat.to_llm()
 
-        added_file_contents = self.extra_context.all(
+        attachments_content = self.attachments.files(
             messages=messages,
-            enable_extra_context=enable_extra_context,
+            enable_attachments=enable_attachments,
             file_paths=file_paths
         )
 
@@ -239,8 +242,8 @@ class Agent:
             messages=messages, 
             prompt=prompt,
             memory_entries=memory_entries, 
-            enable_extra_context=enable_extra_context,
-            added_file_contents=added_file_contents,
+            enable_attachments=enable_attachments,
+            attachments_content=attachments_content,
             enable_auto_read_dropbox=enable_auto_read_dropbox
         )
 
@@ -249,16 +252,16 @@ class Agent:
             prompt=prompt,
             memory_entries=memory_entries,
             file_contents=file_contents,
-            enable_extra_context=enable_extra_context,
-            added_file_contents=added_file_contents,
+            enable_attachments=enable_attachments,
+            added_file_contents=attachments_content,
             enable_auto_web_search=enable_auto_web_search
         )
         
         # Model answer
-        if enable_extra_context == True:
+        if enable_attachments == True:
             messages.append({
                 "role": "user",
-                "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# Web search results\n\n{search_results}\n\n---\n\n# User input\n\n{prompt}\n\n## Uploaded files\n\n{added_file_contents}"
+                "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# Web search results\n\n{search_results}\n\n---\n\n# User input\n\n{prompt}\n\n## Uploaded files\n\n{attachments_content}"
             })
         else:
             messages.append({
@@ -284,13 +287,13 @@ class Agent:
             print("Updataing dropbox metadata...")
             self.file_reader._add_metadata_and_summary(file_paths)
         
-        self.memory.toggle_auto_store_memory_entry(
+        self.memory.toggle_auto_store_memory_entries(
             enable_auto_memory_store= True,
             model_max_tokens=self.get_model_max_tokens,
             context=self.chat.to_llm()
         )
 
-        self.memory.toggle_auto_store_memory_entry(
+        self.memory.toggle_auto_store_memory_entries(
             enable_auto_memory_store= True,
             model_max_tokens=self.get_model_max_tokens,
             context=self.chat.to_llm()

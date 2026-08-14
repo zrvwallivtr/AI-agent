@@ -1,6 +1,5 @@
 import tomllib
 
-from src.agent.tokens_handler import MODEL_MAX, Tokens
 from src import setup
 from src.error_manage import ErrorManage
 
