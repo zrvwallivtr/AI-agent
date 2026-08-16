@@ -17,14 +17,14 @@ logger = get_logger(__name__)
 
 
 def _last_token_usage(messages: list[dict]) -> tuple[int, int]:
-    """Returns prompt_tokens and output_tokens from the latest assistant message."""
+    """Returns p_tkns and o_tkns from the latest assistant message."""
     for msg in reversed(messages):
 
         if msg["role"] == "assistant":
-            prompt_tokens = msg.get("prompt_tokens", 0)
-            output_tokens = msg.get("output_tokens", 0)
-            logger.info("Latest assistant response found (prompt_tokens=%d, output_tokens=%d)", prompt_tokens, output_tokens)
-            return prompt_tokens, output_tokens
+            p_tkns = msg.get("p_tkns", 0)
+            o_tkns = msg.get("o_tkns", 0)
+            logger.info("Latest assistant response found (p_tkns=%d, o_tkns=%d)", p_tkns, o_tkns)
+            return p_tkns, o_tkns
 
     logger.warning("Latest assistant response not found")
     return 0, 0 # no previous assistant message yet (first turn)
@@ -142,17 +142,11 @@ class Agent:
     ) -> None | str:
         """
         Model decide what memories to read.
-
         Manage tokens, compress session if needed.
 
         Note:
         - Only the user question and LLM response will be
           stored into chat history.
-
-        Process:
-        1. Model decides from {prompt} --> {memory_entries}
-        2. Model decides from {memory_entries} + {prompt} --> {file_content} from dropbox
-        3. Model decides from {memory_entries} + {file_content} + {prompt} --> {search_results}
         """
         self._manage_token_budget(prompt)
 
@@ -164,7 +158,6 @@ class Agent:
             if cmd == "/forget":
                 logger.info("'/forget' command triggered")
                 response = self.command.cmd_forget(user_prompt)
-
                 if response:
                     print(response)
                 return
@@ -179,7 +172,6 @@ class Agent:
                     enable_attachments=enable_attachments,
                     file_paths=file_paths
                 )
-
                 if response:
                     print(response)
                 return
@@ -196,7 +188,6 @@ class Agent:
                     enable_auto_memory_retrieve=enable_auto_memory_retrieve,
                     file_paths=file_paths
                 )
-
                 if response:
                     print(response)
                 return
@@ -212,7 +203,6 @@ class Agent:
                     enable_attachments=enable_attachments,
                     file_paths=file_paths
                 )
-
                 if response:
                     print(response)
                 self.memory.toggle_auto_store_memory_entries(
@@ -227,48 +217,74 @@ class Agent:
 
         messages = self.chat.to_llm()
 
-        attachments_content = self.attachments.files(
-            messages=messages,
-            enable_attachments=enable_attachments,
-            file_paths=file_paths
-        )
-
+        # Retrieve memory entries
         memory_entries = self.memory.toggle_auto_retrive_memory_entry(
             enable_auto_memory_retrieve=enable_auto_memory_retrieve, 
             prompt=prompt
         )
+        memory_sect = (
+            f"# Retrieved memory entry(s)\n\n"
+            f"{memory_entries}\n\n"
+            f"---\n\n"
+        )
 
-        file_contents, found_file_paths, read_dropbox = self.file_reader.toggle_auto_read_dropbox(
+        # Attachments
+        attach_file_data = self.attachments.files(
+            messages=messages,
+            enable_attachments=enable_attachments,
+            file_paths=file_paths
+        )
+        attach_sect = "# Attachment(s)\n\n".join(
+            f"Filename: {filename}\n"
+            f"Content: {content}\n\n"
+            for filename, content in attach_file_data.items()
+        ) if attach_file_data else ""
+
+        # Auto read dropbox
+        dropbox_file_data, found_file_paths, read_dropbox = self.file_reader.toggle_auto_read_dropbox(
             messages=messages, 
             prompt=prompt,
             memory_entries=memory_entries, 
             enable_attachments=enable_attachments,
-            attachments_content=attachments_content,
+            attach_file_data=attach_file_data,
             enable_auto_read_dropbox=enable_auto_read_dropbox
         )
+        dropbox_sect = "# Previously uploaded file(s)\n\n".join(
+            f"Filename: {filename}\n"
+            f"Content: {content}\n\n"
+            for filename, content in dropbox_file_data.items()
+        ).join("---\n\n")
 
+        # Auto web search
         search_results, query_with_urls, search = self.search_agent.toggle_auto_web_search(
             messages=messages,
             prompt=prompt,
-            memory_entries=memory_entries,
-            file_contents=file_contents,
             enable_attachments=enable_attachments,
-            added_file_contents=attachments_content,
-            enable_auto_web_search=enable_auto_web_search
+            enable_auto_web_search=enable_auto_web_search,
+            memory_entries=memory_entries,
+            file_contents=dropbox_file_data,
+            attach_file_data=attach_file_data,
         )
-        
+        web_search_sect = (
+            f"# Web search results\n\n"
+            f"{search_results}\n\n"
+            f"---\n\n"
+        )
+
+        # Prompt
+        prompt_sect = (
+            f"# User prompt\n\n"
+            f"{prompt}\n\n"
+            f"---\n\n"
+        )
+
         # Model answer
-        if enable_attachments == True:
-            messages.append({
-                "role": "user",
-                "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# Web search results\n\n{search_results}\n\n---\n\n# User input\n\n{prompt}\n\n## Uploaded files\n\n{attachments_content}"
-            })
-        else:
-            messages.append({
-                "role": "user",
-                "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n---\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# Web search results\n\n{search_results}\n\n---\n\n# User input\n\n{prompt}\n\n"
-            })
-        answer, prompt_tokens, output_tokens = LLM.model_response(messages=messages, model = self.model)
+        cmbind_prompt = memory_sect + dropbox_sect + web_search_sect + prompt_sect + attach_sect
+        messages.append({
+            "role": "user",
+            "content": cmbind_prompt
+        })
+        answer, p_tkns, o_tkns = LLM.model_response(messages=messages, model=self.model)
 
         # Save messages
         self.chat.append_user_message_with_metadata(content=prompt, state="external")
@@ -277,8 +293,8 @@ class Agent:
             state="external",
             attachments=found_file_paths,
             query_with_urls=query_with_urls,
-            prompt_tokens=prompt_tokens,
-            output_tokens=output_tokens
+            p_tkns=p_tkns,
+            o_tkns=o_tkns
         )
 
         # Update dropbox metadata
@@ -287,12 +303,6 @@ class Agent:
             print("Updataing dropbox metadata...")
             self.file_reader._add_metadata_and_summary(file_paths)
         
-        self.memory.toggle_auto_store_memory_entries(
-            enable_auto_memory_store= True,
-            model_max_tokens=self.get_model_max_tokens,
-            context=self.chat.to_llm()
-        )
-
         self.memory.toggle_auto_store_memory_entries(
             enable_auto_memory_store= True,
             model_max_tokens=self.get_model_max_tokens,

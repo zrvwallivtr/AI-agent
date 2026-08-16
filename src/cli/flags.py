@@ -10,7 +10,7 @@ from src.tools.project_manager import ProjectManager
 from src.tools.search import SearchAgent
 
 from src.cli.flag_functions import General, Session, File
-from tools import file_reader
+from src.tools import file_reader
 
 
 def main():

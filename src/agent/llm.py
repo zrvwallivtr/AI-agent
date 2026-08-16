@@ -99,8 +99,8 @@ class LLM:
     def model_response(messages: list[dict], model: str) -> tuple[str, int, int]:
         """Response using specified model, streams output."""
         response        = ""
-        prompt_tokens   = 0
-        output_tokens   = 0
+        p_tkns   = 0
+        o_tkns   = 0
 
         # Send message to the model
         stream = ollama.chat(model=model, messages=messages, stream=True)
@@ -119,10 +119,10 @@ class LLM:
 
                 # Get token count when done
                 if chunk.done:
-                    prompt_tokens = chunk.prompt_eval_count or 0
-                    output_tokens = chunk.eval_count or 0
+                    p_tkns = chunk.prompt_eval_count or 0
+                    o_tkns = chunk.eval_count or 0
 
-        return response, prompt_tokens, output_tokens
+        return response, p_tkns, o_tkns
 
     # =====================================================================
     # Modified model response for customised system prompt and context
@@ -145,10 +145,10 @@ class LLM:
 
         response        = ollama.chat(model=model, messages=messages)
         content         = response.message.content
-        prompt_tokens   = getattr(response, "prompt_eval_cound", 0) or 0
-        output_tokens   = getattr(response, "eval_cound", 0) or 0
+        p_tkns   = getattr(response, "prompt_eval_cound", 0) or 0
+        o_tkns   = getattr(response, "eval_cound", 0) or 0
 
-        return content, prompt_tokens, output_tokens
+        return content, p_tkns, o_tkns
 
     # =====================================================================
     # Memory response formats

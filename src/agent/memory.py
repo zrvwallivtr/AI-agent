@@ -187,7 +187,7 @@ class Memory:
 
         return retrieved_entries
 
-    def add_memory_entries(self, prompt: str) -> str:
+    def add_memory_entries(self, prompt: str) -> str | None:
         """
         Queries long-term vector storage and adds context
         into user's prompt.
@@ -197,23 +197,21 @@ class Memory:
 
         if not memory:
             logger.info("No relevant memory entry found for prompt context")
-            new_message = ""
+            return ""
 
         # Reformat for model readability
         memory_text = "\n".join(
             f"- [{entry['category']}] {entry['content']}"
             for entry in memory
         )
-        new_message = f"# Relevant context from memory\n\n{memory_text}"
         logger.info("Retrieved %d relevant memory entry(s)", len(memory))
-
-        return new_message
+        return memory_text
 
     def toggle_auto_retrive_memory_entry(
         self,
         enable_auto_memory_retrieve: bool,
         prompt: str
-    ) -> str:
+    ) -> str | None:
         """
         Auto memory entry ability, returns memory entries if its toggled on.
 
@@ -221,9 +219,7 @@ class Memory:
         """
         if enable_auto_memory_retrieve == True:
             return self.add_memory_entries(prompt)
-
-        else:
-            return ""
+        return ""
 
     def get_entries_by_ids(self, ids: list[str] | None) -> list[dict]:
         """Retrieves documents and metadata directly from ChromaDB using IDs."""
@@ -304,11 +300,11 @@ class Memory:
         self, 
         context: list[dict], 
         source: Literal["manual", "automatic"],
-        prompt: str | None = None,
     ) -> tuple[list[str], int, int]:
         """
-        Process conversation logs, extracts standalone atomic facts
-        via LLM, and preserves them in long-term vector storage.
+        No prompts needed, process conversation logs,
+        extracts standalone atomic facts via LLM, 
+        and saved to database.
 
         Depends of the system prompt to decide whether to
         extract memory automatically or manually.
@@ -323,18 +319,17 @@ class Memory:
             previous_entries = self.chat.get_trimmed_previous_entries(context)
             last_two_entries = self.chat.get_last_two_entries_roles(context)
             formatted_prompt = f"# All previous conversations\n\n{previous_entries}\n\n---\n\n# New conversations\n\n{last_two_entries}"
-            response = LLM.response_with_new_sys_prompt_and_context(
+            extracted_output, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
                 model=self.model,
                 system_prompt=system_prompt,
                 prompt=formatted_prompt
             )
-            extracted_output, prompt_tokens, output_tokens = response
 
             created_ids = self._format_and_append_to_db(extracted_output, source)
             if created_ids:
                 logger.info("Extracted and saved %d memory entry(s)", len(created_ids))
                 print(f"Memory saved")
-            return created_ids, prompt_tokens, output_tokens
+            return created_ids, p_tkns, o_tkns
 
         except Exception as e:
             logger.error("Memory extraction synthesis failed: error=%s", e, exc_info=True)
@@ -346,14 +341,17 @@ class Memory:
         model_max_tokens: int,
         context: list[dict],
     ):
-        """Auto store memory, should be at the end of every conversations."""
+        """
+        Auto store memory no prompts needed, 
+        should be at the end of every conversations.
+        """
         if enable_auto_memory_store == False:
             return
 
         if model_max_tokens < config.AUTO_MEMORY_STORE_TOKENS:
             return
 
-        created_ids, prompt_tokens, output_tokens = self.extract_and_store_memory_entries(
+        created_ids, p_tkns, o_tkns = self.extract_and_store_memory_entries(
             context=context,
             source= "automatic"
         )

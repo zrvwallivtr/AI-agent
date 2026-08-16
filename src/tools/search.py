@@ -11,6 +11,10 @@ from bs4 import BeautifulSoup
 from src.agent.llm import LLM
 from src.agent.tokens_handler import Tokens
 from src import config
+from src.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 def _get_results_from_query(
@@ -146,12 +150,12 @@ class SearchAgent:
         self.query_prompt           = config.QUERY_PROMPT
         self.tokens                 = Tokens(model=self.model)
 
-    def search_or_not(self, context: list[dict], prompt: str) -> bool:
+    def search_or_not(self, context: list[dict], prompt: str) -> tuple[bool, int, int]:
         """
         Query model to decide whether a question requires search or not.
         Returns either 'True' or 'False'.
         """
-        output, prompt_tokens, output_tokens = LLM.response_with_new_sys_prompt_and_context(
+        output, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
             system_prompt=self.search_or_not_prompt,
             context=context,
@@ -159,11 +163,11 @@ class SearchAgent:
         )
 
         if 'true' in output.lower():
-            return True
+            return True, p_tkns, o_tkns
         else:
-            return False
+            return False, p_tkns, o_tkns
 
-    def search_query_check(self, search_query: str) -> str:
+    def _search_query_check(self, search_query: str) -> str:
         """
         Check format of the search query, remove '"' if it
         exist at the start and end of the query.
@@ -188,7 +192,7 @@ class SearchAgent:
 
         return search_query
 
-    def generates_query(self, context: list[dict], prompt: str) -> str:
+    def generates_query(self, context: list[dict], prompt: str) -> tuple[str, int, int]:
         """Generate query from user input with dynamic date injection."""
         # Get current date
         current_date = datetime.datetime.now().strftime("%A, %d %B %Y")
@@ -196,129 +200,119 @@ class SearchAgent:
         # Update {{current_date}} in 'query_prompt' to actual date
         live_query_prompt = self.query_prompt.replace("{{current_date}}", current_date)
 
-        query, prompt_tokens, output_tokens = LLM.response_with_new_sys_prompt_and_context(
+        query, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
             system_prompt=live_query_prompt,
             context=context,
             prompt=prompt
         )
 
-        return self.search_query_check(query)
+        return self._search_query_check(query), p_tkns, o_tkns
 
-    def web(
+    def web_search_results(
         self,
         query: str,
-        context: list[dict],
-        prompt: str,
-        max_results=config.MAX_RESULTS
-    ) -> tuple[str, list[dict[str, list[str]]], int, int, bool]:
+    ) -> tuple[str, list[dict[str, list[str]]], str]:
         """
-        Answer question from search results. Always returns
-        a 4-element tuple to maintain unpack safety.
-
-        Steps:
-        1. Search web, outputing custom max results.
-        2. Store results into a temporary file.
-        3. Model reads file and response.
-        
-        Note: Only the initial user's question and model
-              generated response will be logged.
+        Search web, outputing custom max results and
+        store results into a temporary file.
         """
         print(f"Searching {query} on {config.SEARCH_ENG}...")
 
         results = _get_results_from_query(query, config.SEARCH_ENG, config.MAX_RESULTS)
         if not results:
-            return "Error: No results found.", [{"": []}], 0, 0, False
+            return "No results found.", [], ""
 
         # Store in temp file
         tmp     = _store_results_in_tmp_file(results)
         urls    = _urls_from_results(results)
-
+        content = _read_tmp_file(tmp)
         query_with_urls = [{f"{query}": urls}]
 
-        # Model reads search results
-        try:
-            print("Reading search results...")
-            search_results = _read_tmp_file(tmp)
+        # Ensure cleanup even if LLM fails mid-execution
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
-            # print(search_results)
+        return content, query_with_urls, tmp
 
-            query_message = LLM.user(f"# Context from web search\n\n{search_results}\n\n---\n\n# User prompt\n\n{prompt}") # This won't be saved in chat
-
-            messages = context + [query_message]
-
-            response, prompt_tokens, output_tokens = LLM.model_response(messages, self.model)
-            return response, query_with_urls, prompt_tokens, output_tokens, True
-
-        finally:
-            # Ensure cleanup even if LLM fails mid-execution
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-
-    def auto_web_search(
+    def web_search_and_response(
         self,
+        query: str,
         context: list[dict],
-        prompt: str
-    ) -> tuple[str, list[dict[str, list[str]]], bool]:
-        """Generates, search and answer query based on user prompt."""
-        #print("Generating query...")
-        query = self.generates_query(
-            context=context,
-            prompt=prompt
+        prompt: str,
+        max_results=config.MAX_RESULTS
+    ) -> tuple[str, list[dict[str, list[str]]], int, int]:
+        """
+        Answer question from search results.
+
+        Note: Only the initial user's question and model
+              generated response will be logged.
+        """
+        search_results, query_with_urls, tmp = self.web_search_results(query)
+
+        query_message = LLM.user(
+            f"# Context from web search\n\n"
+            f"{search_results}\n\n"
+            f"---\n\n"
+            f"# User prompt\n\n"
+            f"{prompt}"
         )
-
-        response, query_with_urls, prompt_tokens, output_tokens, search = self.web(
-            query=query,
-            context=context,
-            prompt=prompt,
-            max_results=config.MAX_RESULTS
-        )
-
-        if search == False:
-            return "Skip.", [{"": []}], False
-
-        response = f"{response}\n{'=' * 40}"
-
-        return response, query_with_urls, True
+        messages = context + [query_message]
+        response, p_tkns, o_tkns = LLM.model_response(messages, self.model)
+        return response, query_with_urls, p_tkns, o_tkns
 
     def toggle_auto_web_search(
         self,
         messages: list[dict],
         prompt: str,
-        memory_entries: str,
-        file_contents: str,
         enable_attachments: bool,
-        added_file_contents: str,
         enable_auto_web_search: bool,
-    ) -> tuple[str, list[dict[str, list[str]]], bool]:
+        memory_entries: str | None = None,
+        file_contents: dict[str, str] | None = None,
+        attach_file_data: dict[str, str] | None = None,
+    ) -> tuple[str, list[dict[str, list[str]]], str]:
         """
         Auto web search ability, returns search results if its toggled on.
 
         Model decides from {memory_entries} + {file_content} + {prompt} --> {search_results}
         """
-        # Check if internet is available
-        internet = is_connected()
+        internet = is_connected() # Check if internet is available
 
-        if internet == True and enable_auto_web_search == True and self.tokens.model_max_tokens > config.AUTO_WEB_SEARCH_TOKENS:
+        if internet == False:
+            logger.warning("Failed to enable model search: No internet connection")
+            return "No results found.", [], ""
 
-            # Enable auto web search
-            search_context = messages
+        if (
+            enable_auto_web_search == False
+            or self.tokens.model_max_tokens <= config.AUTO_WEB_SEARCH_TOKENS
+        ):
+            return "No results found.", [], ""
 
-            if enable_attachments == True:
-                search_context.append({
-                    "role": "user",
-                    "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n--\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# User input\n\n{prompt}\n\n## Uploaded files\n\n{added_file_contents}"
-                })
-            else:
-                search_context.append({
-                    "role": "user",
-                    "content": f"# Retrieved memory entries\n\n{memory_entries}\n\n--\n\n# Previously uploaded files\n\n{file_contents}\n\n---\n\n# User input\n\n{prompt}"
-                })
+        # Prepare context
+        memory_sect = (
+            f"# Retrieved memory entry(s)\n\n"
+            f"{memory_entries}\n\n"
+            f"---\n\n"
+        ) if memory_entries else ""
+        dropbox_sect = (
+            f"# Previously uploaded files\n\n"
+            f"{file_contents}"
+            f"---\n\n"
+        ) if file_contents else ""
+        prompt_sect = (
+            f"# User prompt\n\n"
+            f"{prompt}\n\n"
+            f"---\n\n"
+        )
+        attach_sect = (
+            f"# Attachment(s)\n\n"
+            f"{attach_file_data}"
+        ) if attach_file_data else ""
+        cmbind_prompt = memory_sect + dropbox_sect + prompt_sect + attach_sect
 
-            search = self.search_or_not(search_context, prompt)
-
-            if search == True:
-                return self.auto_web_search(search_context, prompt)
-
-        return "Skip.", [{"": []}], False
-
+        # Auto web search
+        search = self.search_or_not(messages, cmbind_prompt)
+        if search == True:
+            query, _, _ = self.generates_query(messages, prompt)
+            return self.web_search_results(query)
+        return "No results found.", [], ""

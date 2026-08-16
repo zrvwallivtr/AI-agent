@@ -22,23 +22,23 @@ class Attachments:
             messages: list[dict],
             enable_attachments: bool,
             file_paths: list[Path] | None
-    ) -> str:
+    ) -> dict[str, str]:
         """Return Attachment(s) contents"""
         if enable_attachments == False:
-            return ""
+            return {}
 
         if not file_paths:
             logger.error("Unable to add extra context: No file path provided")
-            return ""
+            return {}
 
         logger.info("File(s) attached. Extracting content")
-        added_file_contents = self.file_reader.read_files_with_context_prompt(
+        file_data = self.file_reader.read_files_with_context_prompt(
             context=messages,
             file_paths=file_paths
         )
-        if not added_file_contents:
+        if not file_data:
             logger.error("Extraction failed: Skipping")
-            return ""
+            return {}
         logger.info("Extracted attachment(s) content")
 
         # Store file into dropbox
@@ -46,4 +46,4 @@ class Attachments:
         for path in file_paths:
             content, _ = self.file_reader.load_file_content(path)
             self.file_reader.store_file_in_dropbox(content, path)
-        return added_file_contents
+        return file_data

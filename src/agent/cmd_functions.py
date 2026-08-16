@@ -1,4 +1,5 @@
 from re import search
+from agent import attachments
 import ollama
 from pathlib import Path
 
@@ -53,13 +54,12 @@ class Command:
 
         target_id, matched_content = match_data
 
+        # User confirm options
         print(f"Warning: [ChromaDB] Initializing delte sequence for: '{matched_content}...'")
         choice = input("Press [Enter] to confirm deletion or type [c] to cancel:")
-
         if choice == "c":
             logger.info("Memory deletion cancelled by the user")
             return "Deletion cancelled."
-
         self.memory.delete_from_db([target_id])
         logger.info("Deleted memory entry from database (target_id=%s)", target_id)
         return "Entry deleted."
@@ -71,9 +71,11 @@ class Command:
         file_paths: list[Path] | None = None
     ) -> str:
         """
-        Extract key info from user prompt and save entries to memory.
+        Extract key info from user prompt and attachments (optional),
+        save extracted memory entries to database.
         Note: User's question will be saved directly, this function
-              will then generate a pre-written assistant message.
+              will then generate a pre-written assistant message and
+              saved.
         """
         if not prompt:
             logger.warning("Command '/memorise' aborted: No prompt was provided")
@@ -81,7 +83,7 @@ class Command:
 
         messages = self.chat.to_llm()
 
-        # Toggle extra_context (read files)
+        # Read attachments (optional)
         attachments_content = None
         if enable_attachments == True:
             attachments_content = self.attachments.files(
@@ -91,43 +93,41 @@ class Command:
             )
             logger.info("Retrieved extra context from uploaded files")
 
-        if attachments_content:
-            combined_prompt = f"User prompt\n\n{prompt}\n\n---\n\nAttachment(s)\n\n{attachments_content}"
-        else:
-            combined_prompt = prompt
-
-        messages.append({
-            "role": "user",
-            "content": combined_prompt
-        })
-
+        # Format messages and extract memory
+        cmbind_prompt = (
+            f"User prompt\n\n"
+            f"{prompt}\n\n"
+            f"---\n\n"
+            f"Attachment(s)\n\n"
+            f"{attachments_content}"
+        ) if attachments_content else prompt
+        messages.append({"role": "user", "content": cmbind_prompt})
         print(f"Extracting content from user's input...")
-        created_ids, prompt_tokens, output_tokens = self.memory.extract_and_store_memory_entries(
+        created_ids, p_tkns, o_tkns = self.memory.extract_and_store_memory_entries(
             context=messages,
-            prompt=combined_prompt,
             source="manual",
         )
 
-        # Print exactly the content that is stored
+        # Print to terminal
         saved_entries = self.memory.get_entries_by_ids(created_ids)
         if saved_entries:
             print("Content saved to database:")
             for entry in saved_entries:
-                print(f"    - [{entry['category']}] {entry['content']}")
+                print(f"[{entry['category']}] {entry['content']}\n\n")
             logger.info("Extracted and saved %d memory entry(s) to database", len(created_ids))
         else:
             logger.warning("Command '/memorise' failed: No memory entries extracted by model")
             return "Error: No data was extracted by the model."
 
+        # User confirm options
         choice = input("Press [Enter] to continue or type [u] to undo:")
-
         if choice == "u":
             self.memory.delete_from_db(created_ids)
             logger.info("Memory creation undone by user: Removed %d entry(s)", len(created_ids))
             return "Entry deleted."
-
-        # Only save messages if continue
         confirmation = "Important information(s) has been extracted and uploaded to ChromaDB."
+
+        # Save messages
         self.chat.append_user_message_with_metadata(
             content=prompt,
             state="external"
@@ -135,10 +135,9 @@ class Command:
         self.chat.append_assistant_message_with_metadata(
             content=confirmation,
             state="internal",
-            prompt_tokens=prompt_tokens,
-            output_tokens=output_tokens
+            p_tkns=p_tkns,
+            o_tkns=o_tkns
         )
-
         return "Memory saved to database."
 
     def cmd_recall(
@@ -160,7 +159,7 @@ class Command:
 
         messages = self.chat.to_llm()
 
-        # Toggle extra_context (read files)
+        # Read attachments (optional)
         attachments_content = None
         if enable_attachments == True:
             attachments_content = self.attachments.files(
@@ -170,44 +169,41 @@ class Command:
             )
             logger.info("Retrieved extra context from uploaded files")
 
-        # Toggle retrieve memory entry(s)
+        # Auto retrieve memories
         recalled_entries = self.memory.toggle_auto_retrive_memory_entry(
             enable_auto_memory_retrieve=enable_auto_memory_retrieve,
             prompt=prompt
         )
-        if recalled_entries:
-            recalled = (f"- [{entry['category']}] {entry['content']}" for entry in recalled_entries)
-            logger.info("Retrieved %d relevant memory entry(s)", len(recalled_entries))
-        else:
-            logger.info("No matching memory entries retrieved")
-            recalled = f"No matching memories found."
-
-        # Combine attachments content and memory
-        if attachments_content:
-            combined_prompt = f"# Recalled entries\n\n{recalled_entries}\n\n---\n\n# Attachment(s)\n\n{attachments_content}"
-        else:
-            combined_prompt = f"# Recalled entries\n\n{recalled_entries}"
 
         # Model interpret memory entries
-        answer, prompt_tokens, output_tokens = LLM.response_memory_recall_format(
+        memory_sect = (
+            f"# Recalled entry(s)\n\n"
+            f"{recalled_entries}\n\n"
+            f"--\n\n"
+            if recalled_entries else ""
+        )
+        attachments_sect = (
+            f"# Attachment(s)\n\n"
+            f"{attachments_content}\n\n"
+            if attachments_content else ""
+        )
+        cmbind_prompt = memory_sect + attachments_sect
+        answer, p_tkns, o_tkns = LLM.response_memory_recall_format(
             model=self.memory.model,
             system_prompt=config.MEM_RECALL_INTERPRET_PROMPT,
-            recalled=combined_prompt,
+            recalled=cmbind_prompt,
             prompt=prompt,
             context=messages
         )
 
-        # Save user's question
+        # Save messages
         self.chat.append_user_message_with_metadata(content=prompt, state="external")
-
-        # Add recalled memory to chat (Embedding model: no tokens counts)
         self.chat.append_assistant_message_with_metadata(
             content=answer,
             state="external",
-            prompt_tokens=prompt_tokens,
-            output_tokens=output_tokens
+            p_tkns=p_tkns,
+            o_tkns=o_tkns
         )
-
         return
 
     # ========================================================
@@ -227,48 +223,45 @@ class Command:
 
         messages = self.chat.to_llm()
 
-        # Toggle extra_context (read files)
-        attachments_content = None
-        if enable_attachments == True:
-            attachments_content = self.attachments.files(
-                messages=messages,
-                enable_attachments=enable_attachments,
-                file_paths=file_paths,
-            )
-            logger.info("Retrieved extra context from uploaded files")
+        # Read attachments (optional)
+        attachments_content = self.attachments.files(
+            messages=messages,
+            enable_attachments=enable_attachments,
+            file_paths=file_paths,
+        ) if enable_attachments == True else None
 
-        if attachments_content:
-            combined_prompt = f"{prompt}\n\n---\n\n{attachments_content}"
-        else:
-            combined_prompt = prompt
-
-        print("Generating query...")
-        query = self.search_agent.generates_query(
-            context=messages,
-            prompt=combined_prompt
+        # Model generates query
+        cmbind_prompt = (
+            f"# User prompt\n\n"
+            f"{prompt}\n\n"
+            f"---\n\n"
+            f"# Attachment(s)\n\n"
+            f"{attachments_content}"
+            if attachments_content else prompt
         )
-        if query:
-            logger.info("Generated search query: %s", query)
+        print("Generating query...")
+        query, p_tkns, o_tkns = self.search_agent.generates_query(
+            context=messages,
+            prompt=cmbind_prompt
+        )
 
-        response, query_with_urls, prompt_tokens, output_tokens, search = self.search_agent.web(
+        # Search
+        response, query_with_urls, p_tkns, o_tkns = self.search_agent.web_search_and_response(
             query=query,
             context=self.chat.to_llm(),
-            prompt=combined_prompt,
+            prompt=cmbind_prompt,
             max_results=config.MAX_RESULTS
         )
         logger.info("Processed web search response")
 
-        # Save user messages
+        # Save messages
         self.chat.append_user_message_with_metadata(content=prompt, state="external")
-
-        # Save assistant messages
         self.chat.append_assistant_message_with_metadata(
             content=response,
             state="external",
             query_with_urls=query_with_urls,
             search=True,
-            prompt_tokens=prompt_tokens,
-            output_tokens=output_tokens
+            p_tkns=p_tkns,
+            o_tkns=o_tkns
         )
-
-        return None
+        return

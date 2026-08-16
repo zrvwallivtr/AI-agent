@@ -157,7 +157,7 @@ class Chat:
         if len(last_two_entries) == 2:
             last_two_roles = [msg.get("role") for msg in last_two_entries]
 
-            # "user" then "assistant"
+            # 'user' then 'assistant'
             if last_two_roles == ["user", "assistant"]:
                 return "\n".join(
                     f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
@@ -165,7 +165,7 @@ class Chat:
                     if msg.get("role") != "system" # Excluding system prompt
                 )
 
-            # "assistant" then "user"
+            # 'assistant' then 'user'
             if last_two_roles == ["assistant", "user"]:
                 return "\n".join(
                     f"{msg.get('role', 'user')}: {msg.get('content', '')}"
@@ -307,8 +307,8 @@ class Chat:
         query_with_urls: list[dict[str, list[str]]] | None = None,
         search: bool = False,
 
-        prompt_tokens: int = 0,
-        output_tokens: int = 0
+        p_tkns: int = 0,
+        o_tkns: int = 0
     ):
         """
         State:
@@ -323,8 +323,8 @@ class Chat:
             "role": "assistant",
             "content": content,
             "state": state,
-            "prompt_tokens": prompt_tokens,
-            "output_tokens": output_tokens
+            "p_tkns": p_tkns,
+            "o_tkns": o_tkns
         }
 
         # Tool calls metadata processing
@@ -370,13 +370,13 @@ class Chat:
             LLM.system(self.compression_prompt),
             LLM.user(f"Summarise the following conversation, The summary will replace this conversation as context for future messages.: \n\n{history}")
         ]
-        content, prompt_tokens, output_tokens = LLM.model_response(messages, model)
+        content, p_tkns, o_tkns = LLM.model_response(messages, model)
 
         # If error occurs (model returns nothing or
         # suspiciously low token count), keep history.
-        if not content.strip() or output_tokens <= 5:
+        if not content.strip() or o_tkns <= 5:
             print("Warning: Compression failed")
-            logger.warning("Active conversation compression aborted: Model returned invalid output (output_tokens=%d). Context left unchanged.", output_tokens)
+            logger.warning("Active conversation compression aborted: Model returned invalid output (o_tkns=%d). Context left unchanged.", o_tkns)
             return
 
         instruction = (
@@ -399,8 +399,8 @@ class Chat:
         self.append_assistant_message_with_metadata(
             content=summary,
             state="internal",
-            prompt_tokens=prompt_tokens,
-            output_tokens=output_tokens
+            p_tkns=p_tkns,
+            o_tkns=o_tkns
         )
         logger.info(f"{self.active_conv_path.name}'s active conversation has been compressed.")
         logger.info("Compressed active conversation for session: %s", self.session or "default_session")
