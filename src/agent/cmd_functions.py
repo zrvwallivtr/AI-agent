@@ -1,5 +1,4 @@
 from re import search
-from agent import attachments
 import ollama
 from pathlib import Path
 
