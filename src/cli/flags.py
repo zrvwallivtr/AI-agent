@@ -42,7 +42,7 @@ def main():
     args = parser.parse_args()
 
     agent       = Agent(model=args.model, session=args.session)
-    session     = Session(args.session)
+    session     = Session(args.session or args.new_session)
     file        = File(args.session)
     file_reader = FileReader(args.session)
 

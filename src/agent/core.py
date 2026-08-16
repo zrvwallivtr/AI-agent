@@ -284,7 +284,6 @@ class Agent:
             "role": "user",
             "content": cmbind_prompt
         })
-        print(messages)
         answer, p_tkns, o_tkns = LLM.model_response(messages=messages, model=self.model)
 
         # Save messages
