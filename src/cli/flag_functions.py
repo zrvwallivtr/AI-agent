@@ -17,16 +17,16 @@ def _delete_session_files(session: str | None = None):
     file_reader = FileReader(session)
 
     # Clear active conversation
-    clear_active_conv_response = chat.clear_active_conv()
-    print(clear_active_conv_response)
+    clear_active_conv_response = chat.delete_active_conv()
+    print(clear_active_conv_response) if clear_active_conv_response else None
 
     # Clear chat history
-    clear_chat_history_response = chat.clear_chat_history()
-    print(clear_chat_history_response)
+    clear_chat_history_response = chat.delete_chat_history()
+    print(clear_chat_history_response) if clear_chat_history_response else None
 
     # Clear all files in dropbox
     clear_session_dropbox_response  = file_reader.clear_session_dropbox()
-    print(clear_session_dropbox_response)
+    print(clear_session_dropbox_response) if clear_session_dropbox_response else None
     
 
 # =========================================================

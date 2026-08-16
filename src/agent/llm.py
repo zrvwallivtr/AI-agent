@@ -1,7 +1,7 @@
 import ollama
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.live import Live
+from rich.syntax import Syntax
 
 
 console = Console()
@@ -98,7 +98,10 @@ class LLM:
     @staticmethod
     def model_response(messages: list[dict], model: str) -> tuple[str, int, int]:
         """Response using specified model, streams output."""
-        response        = ""
+        response = ""
+        line_buffer = ""
+        in_code_block = False
+        current_lang = "text"
         p_tkns   = 0
         o_tkns   = 0
 
@@ -106,21 +109,51 @@ class LLM:
         stream = ollama.chat(model=model, messages=messages, stream=True)
 
         # Stream model output in markdown
-        with Live(
-            Markdown(response),
-            console=console,
-            refresh_per_second=11,
-            vertical_overflow="visible"
-        ) as live:
-            for chunk in stream:
-                token = chunk.message.content
-                response += token
-                live.update(Markdown(response))
+        for chunk in stream:
+            token = chunk.message.content
+            response += token
+            line_buffer += token
 
-                # Get token count when done
-                if chunk.done:
-                    p_tkns = chunk.prompt_eval_count or 0
-                    o_tkns = chunk.eval_count or 0
+            # Render and flush completed lines as markdown
+            if "\n" in line_buffer:
+                lines = line_buffer.split("\n")
+                for line in lines[:-1]:
+
+                    # Detect start/end of code fence
+                    if line.strip().startswith("```"):
+                        if not in_code_block:
+                            current_lang = line.strip().lstrip("`").strip() or "text"
+                            in_code_block = True
+                        else:
+                            in_code_block = False
+                            current_lang = "text"
+                        continue
+
+                    if in_code_block:
+                        syntax = Syntax(
+                            line,
+                            current_lang,
+                            theme="monokai",
+                            word_wrap=True
+                        )
+                        console.print(syntax)
+                    else:
+                        if line.strip():
+                            console.print(Markdown(line))
+                        else:
+                            console.print()
+
+                line_buffer = lines[-1]
+
+            if chunk.done:
+                p_tkns = chunk.prompt_eval_count or 0
+                o_tkns = chunk.eval_count or 0
+
+        if line_buffer:
+            if in_code_block:
+                console.print(Syntax(line_buffer, current_lang, theme="monokai", word_wrap=True))
+            elif line_buffer.strip():
+                console.print(Markdown(line_buffer))
 
         return response, p_tkns, o_tkns
 
