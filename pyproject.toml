@@ -17,7 +17,8 @@ dependencies = [
   "lxml",
   "openpyxl",
   "python-docx",
-  "ebooklib"
+  "ebooklib",
+  "docling>=2.120.1",
 ]
 
 [project.scripts]

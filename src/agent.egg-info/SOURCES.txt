@@ -1,8 +1,12 @@
+LICENSE
+NOTICE
 README.md
 pyproject.toml
 src/config.py
 src/agent/__init__.py
+src/agent/attachments.py
 src/agent/chat.py
+src/agent/cmd_functions.py
 src/agent/core.py
 src/agent/llm.py
 src/agent/memory.py
@@ -19,3 +23,5 @@ src/cli/flags.py
 src/tools/file_reader.py
 src/tools/project_manager.py
 src/tools/search.py
+tests/test_error_message.py
+tests/test_setup.py

@@ -8,7 +8,7 @@ from src.agent.memory import Memory
 from src.agent.cmd_functions import Command
 from src.agent.attachments import Attachments
 from src.tools.search import is_connected, SearchAgent
-from src.tools.file_reader import FileReader
+from src.tools.doc_knowledge_base import DocKnowledgeBase
 from src.logger import get_logger
 from src import config
 
@@ -65,7 +65,7 @@ class Agent:
         self.project        = project
         self.chat           = Chat(session=session)
         self.memory         = Memory(project=project)
-        self.file_reader    = FileReader(session=session)
+        self.file_reader    = DocKnowledgeBase(session=session)
         self.command        = Command(model=model, session=session, project=project)
         self.attachments    = Attachments(session=session)
         self.search_agent   = SearchAgent()
@@ -229,7 +229,7 @@ class Agent:
         )
 
         # Attachments
-        attach_file_data = self.attachments.files(
+        attach_files_data = self.attachments.files(
             messages=messages,
             enable_attachments=enable_attachments,
             file_paths=file_paths
@@ -237,8 +237,8 @@ class Agent:
         attach_sect = "# Attachment(s)\n\n".join(
             f"Filename: {filename}\n"
             f"Content: {content}\n\n"
-            for filename, content in attach_file_data.items()
-        ) if attach_file_data else ""
+            for filename, content in attach_files_data.items()
+        ) if attach_files_data else ""
 
         # Auto read dropbox
         dropbox_file_data, found_file_paths, read_dropbox = self.file_reader.toggle_auto_read_dropbox(
@@ -246,7 +246,7 @@ class Agent:
             prompt=prompt,
             memory_entries=memory_entries, 
             enable_attachments=enable_attachments,
-            attach_file_data=attach_file_data,
+            attach_file_data=attach_files_data,
             enable_auto_read_dropbox=enable_auto_read_dropbox
         )
         dropbox_sect = "# Previously uploaded file(s)\n\n".join(
@@ -263,7 +263,7 @@ class Agent:
             enable_auto_web_search=enable_auto_web_search,
             memory_entries=memory_entries,
             file_contents=dropbox_file_data,
-            attach_file_data=attach_file_data,
+            attach_file_data=attach_files_data,
         )
         web_search_sect = (
             f"# Web search results\n\n"
@@ -301,7 +301,7 @@ class Agent:
         if file_paths:
             logger.info("Updating dropbox metadata for: %s", str(file_paths))
             print("Updataing dropbox metadata...")
-            self.file_reader._add_metadata_and_summary(file_paths)
+            self.file_reader.add_metadata_and_summary(attach_files_data)
         
         self.memory.toggle_auto_store_memory_entries(
             enable_auto_memory_store= True,

@@ -5,12 +5,11 @@ from src.agent.core import Agent
 from src.agent.memory import Memory
 from src import config
 
-from src.tools.file_reader import FileReader
+from src.tools.doc_knowledge_base import DocKnowledgeBase
 from src.tools.project_manager import ProjectManager
 from src.tools.search import SearchAgent
 
 from src.cli.flag_functions import General, Session, File
-from src.tools import file_reader
 
 
 def main():
@@ -44,7 +43,7 @@ def main():
     agent       = Agent(model=args.model, session=args.session)
     session     = Session(args.session or args.new_session)
     file        = File(args.session)
-    file_reader = FileReader(args.session)
+    file_reader = DocKnowledgeBase(args.session)
 
     # =================================================================
     # Delete

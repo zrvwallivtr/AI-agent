@@ -117,8 +117,9 @@ ENABLE_AUTO_MEMORY_STORE    = _cfg["memory"]["enable_auto_memory_store"]
 # ========================================================
 
 # Safeguard before enabling auto read files from dropbox
-AUTO_READ_DROPBOX_TOKENS = _cfg["file_reader"]["auto_read_dropbox_enable_at_model_tokens"]
-ENABLE_AUTO_READ_DROPBOX = _cfg["file_reader"]["enable_auto_read_dropbox"]
+AUTO_READ_DROPBOX_TOKENS    = _cfg["file_reader"]["auto_read_dropbox_enable_at_model_tokens"]
+ENABLE_AUTO_READ_DROPBOX    = _cfg["file_reader"]["enable_auto_read_dropbox"]
+DOCLING_DEFAULT             = _cfg["file_reader"]["docling_default"]
 
 
 # ========================================================

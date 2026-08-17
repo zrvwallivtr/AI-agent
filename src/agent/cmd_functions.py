@@ -8,7 +8,7 @@ from src.agent.chat import Chat
 from src.agent.memory import Memory
 from src.agent.attachments import Attachments
 from src.tools.search import is_connected, SearchAgent
-from src.tools.file_reader import FileReader
+from src.tools.doc_knowledge_base import DocKnowledgeBase
 from src import config
 from src.logger import get_logger
 
@@ -28,7 +28,7 @@ class Command:
         self.project        = project
         self.chat           = Chat(session=session)
         self.memory         = Memory(project=project)
-        self.file_reader    = FileReader(session=session)
+        self.file_reader    = DocKnowledgeBase(session=session)
         self.attachments    = Attachments(session=session)
         self.search_agent   = SearchAgent()
 

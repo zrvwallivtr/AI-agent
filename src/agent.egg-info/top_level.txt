@@ -1,5 +1,5 @@
 agent
 cli
 main
-system_prompts
+prompts
 tools

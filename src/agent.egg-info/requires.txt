@@ -9,3 +9,4 @@ lxml
 openpyxl
 python-docx
 ebooklib
+docling>=2.120.1

@@ -2,6 +2,8 @@ Metadata-Version: 2.4
 Name: agent
 Version: 0.1.0
 Requires-Python: >=3.11
+License-File: LICENSE
+License-File: NOTICE
 Requires-Dist: ollama
 Requires-Dist: pdfplumber
 Requires-Dist: requests
@@ -13,3 +15,5 @@ Requires-Dist: lxml
 Requires-Dist: openpyxl
 Requires-Dist: python-docx
 Requires-Dist: ebooklib
+Requires-Dist: docling>=2.120.1
+Dynamic: license-file

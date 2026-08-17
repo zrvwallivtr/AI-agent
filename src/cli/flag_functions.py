@@ -1,10 +1,11 @@
+from typing_extensions import Doc
 import ollama
 from pathlib import Path
 
 from src import config
 from src.agent.chat import Chat
 from src.agent.core import Agent
-from src.tools.file_reader import FileReader
+from src.tools.doc_knowledge_base import DocKnowledgeBase
 
 
 def _delete_session_files(session: str | None = None):
@@ -14,7 +15,7 @@ def _delete_session_files(session: str | None = None):
     related files.
     """
     chat        = Chat(session)
-    file_reader = FileReader(session)
+    file_reader = DocKnowledgeBase(session)
 
     # Clear active conversation
     clear_active_conv_response = chat.delete_active_conv()

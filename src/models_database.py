@@ -2,6 +2,7 @@ MODEL_MAX = {
     # Conversational / Generation Models
     "gemma3:1b":            4096,
     "ministral_3b:latest":  4096,
+    "mistral:7b-instruct-v0.2-q4_K_M": 32000,
 
     # Embedding Models
     "nomic-embed-text": 2048,

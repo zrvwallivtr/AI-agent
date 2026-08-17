@@ -2,21 +2,16 @@ import os
 from os.path import exists
 import re
 import json
-import pdfplumber
-import openpyxl
-import docx
-import ebooklib
 import mimetypes
 import warnings
-from typing import Optional
 from pathlib import Path
-from ebooklib import epub
 from bs4 import BeautifulSoup
 from typing import Any
 
 from src.agent.llm import LLM
 from src.agent.chat import Chat
 from src.agent.tokens_handler import Tokens
+from src.tools.parsers import Parsers
 from src import config
 from src.logger import get_logger
 
@@ -43,7 +38,7 @@ def _read_file(path) -> str:
     return content
 
 
-class FileReader:
+class DocKnowledgeBase:
     def __init__(
         self,
         session: str | None = None,
@@ -53,6 +48,7 @@ class FileReader:
         self.chat               = Chat(session=session)
         self.model              = config.MODEL
         self.tokens             = Tokens(model=self.model)
+        self.parsers            = Parsers()
 
         # Files
         self.dropbox_dir        = session_path(session)
@@ -63,162 +59,6 @@ class FileReader:
         self.metadata_path      = session_path(session) / "file_metadata.json"
         self.file_metadata      = self._load_file_metadata()
         self.gen_summary_prompt = config.GEN_SUMMARY_PROMPT
-
-        # Map formats to their parsing methods
-        self.formats = {
-            # Plain text
-            ".txt": self._read_txt,
-
-            # Data & configuration formats
-            ".csv": self._read_csv,
-            ".xlsx": self._read_xlsx,
-            ".yaml": self._read_yaml,
-            ".yml": self._read_yml,
-            ".toml": self._read_toml,
-            ".xml": self._read_xml,
-            
-            # Text documents
-            ".pdf": self._read_pdf,
-            ".docx": self._read_docx,
-            ".epub": self._read_epub,
-            
-            # Programming
-            ".py": self._read_code,
-            ".js": self._read_code,
-            ".ts": self._read_code,
-            ".tsx": self._read_code,
-            ".json": self._read_code,
-            ".md": self._read_code,
-            ".sh": self._read_code,
-            ".html": self._read_code,
-            ".css": self._read_code,
-            ".rs": self._read_code,
-            ".go": self._read_code,
-        }
-
-    # ==================================================
-    # Parsers
-    #
-    # - Extracts file contents line by line into plain
-    #   text.
-    # ==================================================
-
-    def _read_txt(self, path: Path, file_type: str = "txt") -> str:
-        """Reads plain text files using UTF-8 validation."""
-        try:
-            content = path.read_text(encoding="utf-8", errors="ignore")
-            logger.info("Extracted '%s' file content as plain text: path='%s'", file_type, path)
-            return content
-        except Exception as e:
-            logger.error(f"Failed to read '%s' file: path='%s', error=%s", file_type, path, e)
-            return f"Failed to extract file content"
-
-    def _read_csv(self, path: Path) -> str:
-        """Reads csv as plain text files."""
-        return self._read_txt(path, "csv")
-
-    def _read_xlsx(self, path: Path) -> str:
-        """Extracts text content from spreadsheet row by row."""
-        try:
-            wb          = openpyxl.load_workbook(path, data_only=True)
-            excel_text  = []
-
-            for sheet_name in wb.sheetnames:
-                ws = wb[sheet_name]
-                excel_text.append(f"=== Sheet: {sheet_name} ===")
-
-                for row in ws.iter_rows(values_only=True):
-                    # Only process lines that contain actual data elements
-                    if any(cell is not None for cell in row):
-                        clean_row = [str(cell).strip() if cell is not None else "" for cell in row]
-                        excel_text.append(" | ".join(clean_row))
-
-            logger.info("Extracted text content from xlsx file row by row: path='%s', sheets=%d", path, len(wb.sheetnames))
-            return "\n".join(excel_text)
-
-        except Exception as e:
-            logger.error("Failed to read xlsx file: path=%s, error=%s", path, e)
-            return f"Failed to extract file content"
-
-    def _read_yaml(self, path: Path) -> str:
-        return self._read_txt(path, "yaml")
-
-    def _read_yml(self, path: Path) -> str:
-        return self._read_txt(path, "yml")
-
-    def _read_toml(self, path: Path) -> str:
-        return self._read_txt(path, "toml")
-
-    def _read_xml(self, path: Path) -> str:
-        return self._read_txt(path, "xml")
-
-    def _read_pdf(self, path: Path) -> str:
-        """Extracts pdf text content layout page by page."""
-        try:
-            with pdfplumber.open(path) as pdf:
-                pages = [page.extract_text() for page in pdf.pages]
-                pages = [p for p in pages if p]
-                logger.info("Extracted PDF text content page by page: path='%s', pages=%d", path, len(pdf.pages))
-                return "\n\n".join(pages)
-
-        except Exception as e:
-            logger.error("Failed to read PDF file: path=%s, error=%s", path, e)
-            return f"Failed to extract file content"
-    
-    def _read_docx(self, path: Path) -> str:
-        """Extracts structural text elements line by line from document."""
-        try:
-            doc = docx.Document(path)
-            paragraphs = []
-
-            for para in doc.paragraphs:
-                clean_text = para.text.strip()
-                if clean_text:
-                    paragraphs.append(clean_text)
-            
-            logger.info("Extracted docx text content line by line: path='%s', paragraphs=%d", path, len(paragraphs))
-            return "\n".join(paragraphs)
-
-        except Exception as e:
-            logger.error("Failed to read docx file: path='%s', error=%s", path, e)
-            return f"Failed to extract file content"
-
-    def _read_epub(self, path: Path) -> str:
-        """Extracts plain text blocks from internal EPUB XHTML document payloads."""
-        try:
-            book            = epub.read_epub(path)
-            chapters_text   = []
-
-            for item in book.get_items():
-                # EPUB structural content is split into internal document items
-                if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                    soup = BeautifulSoup(item.get_content(), "lxml")
-
-                    # Remove visual layout nodes that shouldn't feed context windows
-                    for junk in soup(["script", "style"]):
-                        junk.decompose()
-
-                    plain_text = soup.get_text(separator="\n").strip()
-                    if plain_text:
-                        chapters_text.append(plain_text)
-
-            logger.info(
-                "Extracted plain text blocks from EPUB file: path='%s', chapters=%d",
-                path,
-                len(chapters_text)
-            )
-            return "\n\n".join(chapters_text)
-
-        except Exception as e:
-            logger.error("Failed to read EPUB file: path='%s', error=%s", path, e)
-            return f"Failed to extract file content"
-
-    def _read_code(self, path: Path) -> str:
-        """Reads code files and wraps them in markdown code fences."""
-        lang    = path.suffix.lstrip(".")
-        content = self._read_txt(path, f"{lang}")
-
-        return f"```{lang}\n{content}\n```"
 
     # ================================================
     # Metadata (file_metadata.json)
@@ -372,7 +212,7 @@ class FileReader:
         )
         return available_files
 
-    def store_file_in_dropbox(self, content: str, file_path: Path):
+    def store_file_in_dropbox(self, content: str, file_path: Path) -> Path | None:
         """Store file contents into the dropbox."""
         # Prevent duplicated filename in the metadata
         filename = file_path.name
@@ -391,6 +231,7 @@ class FileReader:
                 self.session_name,
                 self.dropbox_dir
             )
+            return path
 
         except Exception as e:
             logger.error(
@@ -419,52 +260,52 @@ class FileReader:
     # File contents
     # ================================================
 
-    def load_file_content(self, file_path: Path) -> tuple[str, bool]:
+    def load_file_content(self, file_path: Path) -> tuple[dict[str, str], bool]:
         """Return file content as a string using mapped parsers."""
         ext = file_path.suffix.lower()
 
         if not file_path.exists():
             logger.warning("Failed to load file content: '%s' not found")
-            return "", False
+            return {}, False
 
         # Route to correct parser, fallback to plain text if unknown
-        parser = self.formats.get(ext, self._read_txt)
+        file_data = {}
+        parser = self.parsers.formats.get(ext, self.parsers._read_txt)
+        filename = file_path.name
+        content = parser(file_path)
+        file_data[filename] = content
 
-        return parser(file_path), True
+        return file_data, True
 
     def _load_contents_from_file_list(self, file_paths: list[Path]) -> dict[str, str]:
-        """From a list of filenames, returns contents in path as a string."""
-        file_data = {}
+        """From a list of filenames, returns filename and contents as dictionary."""
+        files_data = {}
 
         for path in file_paths:
-            filename = path.name
-            content, path_exists = self.load_file_content(path)
-            file_data[filename] = content if path_exists else None
+            file_data, path_exists = self.load_file_content(path)
+            files_data.update(file_data) if path_exists else None
 
-        if not file_data:
+        if not files_data:
             logger.warning(
                 "Failed to read file(s): No valid content found in %s",
                 str(file.name for file in file_paths)
             )
             return {}
 
-        return file_data
+        return files_data
 
     # ==================================================
     # Model integration
     # ==================================================
 
-    def _generate_short_summary(self, file_path: Path) -> tuple[str, int, int]:
+    def _generate_short_summary(self, filename: str, content: str) -> tuple[str, int, int]:
         """Model generates a short summary about the file content."""
-        filename = file_path.name
-        content, _ = self.load_file_content(file_path)
-
         formatted_file_content = (
             f"## Filename: {filename}\n"
             f"File content:\n"
             f"{content}\n\n"
         )
-        logger.info("Formatted file content: path='%s'", file_path)
+        logger.info("Formatted file content: filename='%s'", filename)
 
         summary, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
@@ -472,14 +313,13 @@ class FileReader:
             prompt=formatted_file_content
         )
 
-        logger.info("Model generated short summary for file: path='%s'", file_path)
+        logger.info("Model generated short summary for file: filename='%s'", filename)
         return summary, p_tkns, o_tkns
 
-    def _add_metadata_and_summary(self, file_paths: list[Path]):
+    def add_metadata_and_summary(self, files_data: dict[str, str]):
         """Add summary and metadata to files."""
-        for path in file_paths:
-            filename = path.name
-            summary, p_tkns, o_tkns = self._generate_short_summary(path)
+        for filename, content in files_data.items():
+            summary, p_tkns, o_tkns = self._generate_short_summary(filename, content)
             self._add_file_metadata(filename, summary)
             logger.info("Added summary and metadata: file='%s'", filename)
 
@@ -550,7 +390,12 @@ class FileReader:
         logger.info("Checking session dropbox metadata")
         files_without_summary = self._files_not_in_file_metadata()
         file_paths = [self.dropbox_dir / file for file in files_without_summary]
-        self._add_metadata_and_summary(file_paths)
+        files_data = {}
+        for file in file_paths:
+            filename = file.name
+            content = _read_file(file)
+            files_data[filename] = content
+        self.add_metadata_and_summary(files_data)
 
         # Re-sync metadata
         if hasattr(self, "_load_file_metadata"):
@@ -626,7 +471,7 @@ class FileReader:
         cmbind_prompt = memory_sect + prompt_sect + attach_sect
 
         # Model selects filename(s)
-        require_file = self.require_file_or_not(messages, cmbind_prompt)
+        require_file, _, _ = self.require_file_or_not(messages, cmbind_prompt)
         if require_file == True:
             logger.info("Model decided extra context from session dropbox needed")
             available_files_prompt  = self._get_available_file_with_summary()
@@ -650,8 +495,9 @@ class FileReader:
         if not file_paths:
             return None
 
+        files_data = {}
         for path in file_paths:
             filename = path.name
-            file_content, path_exists = self.load_file_content(path)
-            file_data[filename] = file_content if path_exists else None
-        return file_data
+            file_data, path_exists = self.load_file_content(path)
+            files_data.update(file_data) if path_exists else None
+        return files_data

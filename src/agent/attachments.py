@@ -4,7 +4,7 @@ from src.agent.llm import LLM
 from src.agent.tokens_handler import Tokens
 from src.agent.chat import Chat
 from src.tools.search import is_connected, SearchAgent
-from src.tools.file_reader import FileReader
+from src.tools.doc_knowledge_base import DocKnowledgeBase
 from src import config
 from src.logger import get_logger
 
@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 class Attachments:
     def __init__(self, session: str | None = None):
         self.session        = session
-        self.file_reader    = FileReader(session=session)
+        self.file_reader    = DocKnowledgeBase(session=session)
 
     def files(
             self,
@@ -43,7 +43,10 @@ class Attachments:
 
         # Store file into dropbox
         logger.info("Storing file(s) into session dropbox '%s': %s", self.file_reader.dropbox_dir, file_paths)
+        files_data = {}
         for path in file_paths:
-            content, _ = self.file_reader.load_file_content(path)
+            file_data, path_exists = self.file_reader.load_file_content(path)
+            files_data.update(file_data) if path_exists else None
+            content = file_data[path.name]
             self.file_reader.store_file_in_dropbox(content, path)
-        return file_data
+        return files_data
