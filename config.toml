@@ -33,4 +33,3 @@ max_results                             = 3
 max_char_per_page                       = 3000
 auto_web_search_enable_at_model_tokens  = 128000
 enable_auto_web_search                  = true
-

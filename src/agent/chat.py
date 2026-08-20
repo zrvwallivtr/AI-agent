@@ -8,11 +8,9 @@ from src import config
 from src.agent.llm import LLM
 from src.logger import get_logger
 
-
 logger = get_logger(__name__)
 
 TOOL_LIST = Literal["web_search", "read_files"]
-
 
 def _session_path(session: str | None = None) -> tuple[Path, Path]:
     if session is not None:

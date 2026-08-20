@@ -40,8 +40,8 @@ def main():
 
     args = parser.parse_args()
 
-    agent       = Agent(model=args.model, session=args.session)
-    session     = Session(args.session or args.new_session)
+    agent       = Agent(model=args.model, sess_name=args.session)
+    session     = Session(args.session or args.new_session or args.delete_session)
     file        = File(args.session)
     file_reader = DocKnowledgeBase(args.session)
 
@@ -63,15 +63,19 @@ def main():
     # Session
     # =================================================================
     if args.new_session:
-        answer = session.create_session(model=args.model, prompt=args.question)
+        response = session.create_session(model=args.model, prompt=args.question)
+        if response:
+            print(response)
         return
 
     if args.delete_session:
-        session.delete_session()
+        response = session.delete_session()
+        if response:
+            print(response)
         return
 
     if args.list_session:
-        Session.list_session()
+        session.list_session()
         return
 
     # =================================================================
@@ -129,7 +133,7 @@ def main():
         General.question(
             prompt=args.question,
             model=args.model,
-            session=args.session,
+            sess_name=args.session,
         )
 
     # =================================================================

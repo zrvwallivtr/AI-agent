@@ -10,3 +10,5 @@ openpyxl
 python-docx
 ebooklib
 docling>=2.120.1
+psycopg2>=2.9.12
+dotenv>=0.9.9

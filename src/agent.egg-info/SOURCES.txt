@@ -6,10 +6,12 @@ src/config.py
 src/agent/__init__.py
 src/agent/attachments.py
 src/agent/chat.py
+src/agent/chat_logs.py
 src/agent/cmd_functions.py
 src/agent/core.py
 src/agent/llm.py
 src/agent/memory.py
+src/agent/memory_logs.py
 src/agent/tokens_handler.py
 src/agent.egg-info/PKG-INFO
 src/agent.egg-info/SOURCES.txt
@@ -20,7 +22,8 @@ src/agent.egg-info/top_level.txt
 src/cli/__init__.py
 src/cli/flag_functions.py
 src/cli/flags.py
-src/tools/file_reader.py
+src/tools/doc_knowledge_base.py
+src/tools/parsers.py
 src/tools/project_manager.py
 src/tools/search.py
 tests/test_error_message.py

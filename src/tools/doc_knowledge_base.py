@@ -69,19 +69,22 @@ class DocKnowledgeBase:
         if not self.dropbox_dir.exists():
             self.dropbox_dir.mkdir(parents=True, exist_ok=True)
 
+        # Return '{}' if metadata file not exists
         if not self.metadata_path.exists():
             default_data = {}
             self.metadata_path.write_text(json.dumps(default_data, indent=4), encoding="utf-8")
             logger.info(
-                "%s session metadata file does not exists. Created new file",
-                self.session_name
+                "Initiated 'file_metadata.json' in dropbox: session=%s, path='%s'",
+                self.session_name,
+                self.metadata_path
             )
             return default_data
 
         try:
+            # Return entire dictionary
             metadata = json.loads(self.metadata_path.read_text(encoding="utf-8"))
             logger.info(
-                "%s session dropbox metadata extracted: path='%s'",
+                "Extracted all metadata in dropbox: session=%s, path='%s'",
                 self.session_name,
                 self.metadata_path
             )
@@ -89,7 +92,7 @@ class DocKnowledgeBase:
 
         except json.JSONDecodeError as e:
             logger.error(
-                "Failed to decode JSON payload in '%s': line=%d, col=%d, error=%s",
+                "Failed to decode JSON payload: path='%s', line=%d, col=%d, error=%s",
                 self.metadata_path,
                 e.lineno,
                 e.colno,
@@ -113,7 +116,7 @@ class DocKnowledgeBase:
         path = self.dropbox_dir / filename
         mime_type, _ = mimetypes.guess_type(path)
 
-        # Ensure 'file_metadata' is a dictionary
+        # Ensure 'self.file_metadata' is a dictionary
         if not isinstance(self.file_metadata, dict):
             raise TypeError(
                 f"Error: Expected 'file_metadata' to be a dict, but got {type(self.file_metadata).__name__}"
@@ -136,7 +139,7 @@ class DocKnowledgeBase:
         self.dropbox_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_path.write_text(json.dumps(self.file_metadata, indent=4), encoding="utf-8")
         logger.info(
-            "%s metadata appended to %s sessin file metadata: path='%s'",
+            "New file entry added to 'file_metadata.json': file=%s, session=%s, path='%s'",
             filename,
             self.session_name,
             self.metadata_path
@@ -145,13 +148,18 @@ class DocKnowledgeBase:
     def _get_filenames_from_metadata(self) -> list[str]:
         """Return all filenames from 'file_metadata.json'."""
         if not self.metadata_path.exists():
+            logger.warning(
+                "Failed to retrive filename(s). 'file_metadata.json' does not exists: session=%s, path='%s'",
+                self.session_name,
+                self.metadata_path
+            )
             return []
 
         try:
             data        = json.loads(self.metadata_path.read_text(encoding="utf-8"))
             filenames   = list(data.keys())
             logger.info(
-                "Retrived %d filename(s) from %s session file metadata: path='%s'",
+                "Retrived %d filename(s) from 'file_metadata.json': session=%s, path='%s'",
                 len(filenames),
                 self.session_name,
                 self.metadata_path
@@ -160,7 +168,7 @@ class DocKnowledgeBase:
 
         except json.JSONDecodeError as e:
             logger.error(
-                "Failed to decode JSON payload in '%s': line=%d, col=%d, error=%s",
+                "Failed to decode JSON payload: path='%s', line=%d, col=%d, error=%s",
                 self.metadata_path,
                 e.lineno,
                 e.colno,
@@ -178,7 +186,7 @@ class DocKnowledgeBase:
         files_without_summary   = list(set(available_files) - set(files_with_summary))
 
         logger.info(
-            "%d file(s) not in %s session file metadata: path='%s'",
+            "%d file(s) not registered in 'file_metadata.json': session=%s, path='%s'",
             len(files_without_summary),
             self.session_name,
             self.metadata_path
@@ -193,7 +201,7 @@ class DocKnowledgeBase:
         """Return a list of files currently in the directory."""
         if not self.dropbox_dir.exists():
             logger.warning(
-                "%s session dropbox not found: path='%s'",
+                "No available files was retrieved. Session dropbox not found: session=%s, path='%s'",
                 self.session_name,
                 self.dropbox_dir
             )
@@ -205,7 +213,7 @@ class DocKnowledgeBase:
             if file.is_file() and file.name != "file_metadata.json":
                 available_files.append(file.name)
         logger.info(
-            "%d file(s) detected in %s session dropbox: path='%s'",
+            "%d available file(s) detected in dropbox: session=%s, path='%s'",
             len(available_files),
             self.session_name,
             self.dropbox_dir
@@ -226,7 +234,7 @@ class DocKnowledgeBase:
             path = self.dropbox_dir / filename
             path.write_text(content, encoding="utf-8")
             logger.info(
-                "'%s' stored into %s session dropbox: path='%s'",
+                "Uploaded file to dropbox: file=%s, session=%s, path='%s'",
                 filename,
                 self.session_name,
                 self.dropbox_dir
@@ -235,7 +243,8 @@ class DocKnowledgeBase:
 
         except Exception as e:
             logger.error(
-                "Failed to cache content in %s session dropbox: path='%s', error=%s",
+                "Failed to upload file to dropbox: file=%s, session=%s, path='%s', error=%s",
+                filename,
                 self.session_name,
                 self.dropbox_dir,
                 e
@@ -249,15 +258,20 @@ class DocKnowledgeBase:
                     child.unlink()
 
             self.dropbox_dir.rmdir()
-            logger.info("Cleared all files dropbox: path='%s'", self.dropbox_dir)
+            logger.info(
+                "Cleared all files in dropbox: session=%s, path='%s'",
+                self.session_name,
+                self.dropbox_dir
+            )
 
         logger.error(
-            "'%s' not found. Failed to clear session dropbox",
+            "Failed to clear dropbox. Dropbox directory not found: session=%s, path='%s'",
+            self.session_name,
             self.dropbox_dir
         )
 
     # ================================================
-    # File contents
+    # File content
     # ================================================
 
     def load_file_content(self, file_path: Path) -> tuple[dict[str, str], bool]:
@@ -265,10 +279,17 @@ class DocKnowledgeBase:
         ext = file_path.suffix.lower()
 
         if not file_path.exists():
-            logger.warning("Failed to load file content: '%s' not found")
+            logger.warning(
+                "Failed to load file content. File does not exists: path='%s'",
+                file_path
+            )
             return {}, False
 
         # Route to correct parser, fallback to plain text if unknown
+        logger.info("Routing to correct parser to extract file content")
+        logger.info(
+            "User selected Docling as default parser method. Loading converter"
+        ) if config.DOCLING_DEFAULT else None
         file_data = {}
         parser = self.parsers.formats.get(ext, self.parsers._read_txt)
         filename = file_path.name
@@ -284,36 +305,38 @@ class DocKnowledgeBase:
         for path in file_paths:
             file_data, path_exists = self.load_file_content(path)
             files_data.update(file_data) if path_exists else None
-
-        if not files_data:
-            logger.warning(
-                "Failed to read file(s): No valid content found in %s",
-                str(file.name for file in file_paths)
-            )
-            return {}
+            if not file_data:
+                logger.warning(
+                    "Failed to read file. No valid content found: path='%s'",
+                    path
+                )
+                continue
 
         return files_data
 
     # ==================================================
-    # Model integration
+    # Model integration (metadata)
     # ==================================================
 
     def _generate_short_summary(self, filename: str, content: str) -> tuple[str, int, int]:
         """Model generates a short summary about the file content."""
         formatted_file_content = (
-            f"## Filename: {filename}\n"
+            f"# Filename: {filename}\n"
             f"File content:\n"
-            f"{content}\n\n"
+            f"{content}"
         )
-        logger.info("Formatted file content: filename='%s'", filename)
 
+        logger.info(
+            "Model generating short summary for file: model=%s, filename=%s",
+            self.model,
+            filename
+        )
         summary, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
             system_prompt=self.gen_summary_prompt,
             prompt=formatted_file_content
         )
-
-        logger.info("Model generated short summary for file: filename='%s'", filename)
+        logger.info("Generated short summary for file: filename=%s", filename)
         return summary, p_tkns, o_tkns
 
     def add_metadata_and_summary(self, files_data: dict[str, str]):
@@ -321,18 +344,17 @@ class DocKnowledgeBase:
         for filename, content in files_data.items():
             summary, p_tkns, o_tkns = self._generate_short_summary(filename, content)
             self._add_file_metadata(filename, summary)
-            logger.info("Added summary and metadata: file='%s'", filename)
 
-    def _structured_file_string(self, filename: str, summary: str) -> str:
-        """Format contents for model to read."""
-        string = (
-            f"# Filename: {filename}\n"
-            f"File summary: {summary}\n\n---\n\n"
-        )
-        return string
+    # ==================================================
+    # Model choose relevant context
+    # ==================================================
 
     def require_file_or_not(self, context: list[dict], prompt: str) -> tuple[bool, int, int]:
         """Query model to decide if file context is needed, return 'True' or 'False' only."""
+        logger.info(
+            "Model deciding if query requires extra context in dropbox: model=%s",
+            self.model
+        )
         output, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
             model=self.model,
             system_prompt=self.file_or_not_prompt,
@@ -340,11 +362,13 @@ class DocKnowledgeBase:
             context=context
         )
         if 'true' in output.lower():
+            logger.info("Query require extra context")
             return True, p_tkns, o_tkns
         else:
+            logger.info("Query does not require extra context")
             return False, p_tkns, o_tkns
 
-    def model_get_filenames(self, context: list[dict], available_files_prompt: str) -> tuple[list[Path], list[Path], int, int]:
+    def model_request_files(self, context: list[dict], available_files_prompt: str) -> tuple[list[Path], list[Path], int, int]:
         """
         Ask model to choose from available in current session to get relevant context,
         formats model output to get clean lists of data.
@@ -356,12 +380,16 @@ class DocKnowledgeBase:
             prompt=available_files_prompt,
             context=context
         )
-        logger.info("Model decided to retrieve %d file(s)", len(list_of_files))
+        logger.info(
+            "Model decided to retrieve %d file(s): model=%s",
+            len(list_of_files),
+            self.model
+        )
 
         found_file_paths        = []
         not_found_file_paths    = []
 
-        # Reformats generated string to a clean list
+        # Reformats model generated string to a clean list
         parsed_names = []
         for token in re.split(r"[,\n]", list_of_files):
             name = re.sub(r"[*'\"\'\-]", "", token).strip()
@@ -379,7 +407,16 @@ class DocKnowledgeBase:
         logger.warning("%d file(s) not found in session dropbox", len(not_found_file_paths))
         return found_file_paths, not_found_file_paths, p_tkns, o_tkns
 
-    def _get_available_file_with_summary(self) -> str:
+    def _structured_file_string(self, filename: str, summary: str) -> str:
+        """Format contents for model to read."""
+        string = (
+            f"# Filename: {filename}\n"
+            f"File summary: {summary}\n\n"
+            f"---\n\n"
+        )
+        return string
+
+    def _list_available_file_with_summary(self) -> str:
         """
         Steps:
         1. Add summary and metadata that are not in 'file_metadata.json'.
@@ -387,7 +424,11 @@ class DocKnowledgeBase:
         3. Format filenames and summary to a string for model to read.
         """
         # Add summary and metadata if not exists
-        logger.info("Checking session dropbox metadata")
+        logger.info(
+            "Verifying if 'file_metadata.json' is up to date: session=%s, path='%s'",
+            self.session_name,
+            self.metadata_path
+        )
         files_without_summary = self._files_not_in_file_metadata()
         file_paths = [self.dropbox_dir / file for file in files_without_summary]
         files_data = {}
@@ -396,26 +437,20 @@ class DocKnowledgeBase:
             content = _read_file(file)
             files_data[filename] = content
         self.add_metadata_and_summary(files_data)
+        logger.info("Updated %d file(s) in 'file_metadata.json'", len(files_data))
 
         # Re-sync metadata
         if hasattr(self, "_load_file_metadata"):
             self.file_metadata = self._load_file_metadata() or {}
-        logger.info("Added %d file(s) into dropbox metadata", len(files_without_summary))
 
-        # List all available files
+        # Structure filenames and summary into string
         filenames = self.list_available_files()
-        logger.info("Detected %d file(s) in session dropbox", len(filenames))
-
-        # Filenames with its corresponding summary
         blocks = []
         for file in filenames:
             metadata = self.file_metadata.get(file, {})
             summary = metadata.get("summary", "No summary available")
-
             blocks.append(self._structured_file_string(file, summary))
-        
         entries = "\n\n".join(blocks)
-
         logger.info("Retrieved all available file(s) and summary(s)")
         return f"# All available files\n\n{entries}"
 
@@ -437,19 +472,18 @@ class DocKnowledgeBase:
 
         Model decides from {memory_entries} + {prompt} + {attached_file} --> {file_content} from dropbox
         """
-        # Return nothing if:
-        # - Auto read dropbox not enabled
-        # - Token limits not reached
         if (
             enable_auto_read_dropbox == False
             or self.tokens.model_max_tokens <= config.AUTO_READ_DROPBOX_TOKENS
         ):
             return {}, [], False
 
-        # Return nothing if:
-        # - Dropbox is empty
         if _is_dir_empty(self.dropbox_dir):
-            logger.info("No extra file context retrieved: Session dropbox is empty")
+            logger.info(
+                "No extra file context retrieved. Dropbox is empty: session=%s, path='%s'",
+                self.session_name,
+                self.dropbox_dir
+            )
             return {}, [], False
 
         # Prepare context for model to decide require file or not
@@ -472,10 +506,9 @@ class DocKnowledgeBase:
 
         # Model selects filename(s)
         require_file, _, _ = self.require_file_or_not(messages, cmbind_prompt)
-        if require_file == True:
-            logger.info("Model decided extra context from session dropbox needed")
-            available_files_prompt  = self._get_available_file_with_summary()
-            found_files, _, _, _    = self.model_get_filenames(messages, available_files_prompt)
+        if require_file:
+            available_files_prompt  = self._list_available_file_with_summary()
+            found_files, _, _, _    = self.model_request_files(messages, available_files_prompt)
             found_file_paths        = [self.dropbox_dir / file for file in found_files] # Turn found_files to paths
             return self._load_contents_from_file_list(found_file_paths), found_files, True
         return {}, [], False
@@ -489,7 +522,7 @@ class DocKnowledgeBase:
             context: list[dict],
             file_paths: list[Path] | None,
     ) -> dict[str, str] | None:
-        """Read all files contents from a list of filenames."""
+        """Return all file's name and content from a list of filenames."""
         file_data = {}
 
         if not file_paths:

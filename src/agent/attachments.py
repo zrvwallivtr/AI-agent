@@ -18,10 +18,10 @@ class Attachments:
         self.file_reader    = DocKnowledgeBase(session=session)
 
     def files(
-            self,
-            messages: list[dict],
-            enable_attachments: bool,
-            file_paths: list[Path] | None
+        self,
+        messages: list[dict],
+        enable_attachments: bool,
+        file_paths: list[Path] | None
     ) -> dict[str, str]:
         """Return Attachment(s) contents"""
         if enable_attachments == False:

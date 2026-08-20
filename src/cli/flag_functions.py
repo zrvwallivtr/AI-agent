@@ -1,37 +1,77 @@
-from typing_extensions import Doc
+import psycopg2
 import ollama
+from typing_extensions import Doc
 from pathlib import Path
 
 from src import config
-from src.agent.chat import Chat
+
+from src.agent.chat_logs import ChatLogs
 from src.agent.core import Agent
-from src.tools.doc_knowledge_base import DocKnowledgeBase
+# from src.tools.doc_knowledge_base import DocKnowledgeBase
 
+conn = psycopg2.connect(
+    dbname=config.DBNAME,
+    user=config.USER,
+    password=config.PASSWORD,
+    host=config.HOST,
+    port=config.PORT
+)
+cur = conn.cursor()
 
-def _delete_session_files(session: str | None = None):
+def _del_sess(sess_name: str | None = None) -> str:
     """
     Delete session related files. If 'session'
     is not specified, delete default session 
     related files.
     """
-    chat        = Chat(session)
-    file_reader = DocKnowledgeBase(session)
+    chat_logs = ChatLogs(sess_name=sess_name)
+    sess_id = chat_logs.get_sess_id()
+    if not sess_id:
+        return f"Failed to delete session: Session '{sess_name}' does not exist"
 
-    # Clear active conversation
-    clear_active_conv_response = chat.delete_active_conv()
-    print(clear_active_conv_response) if clear_active_conv_response else None
+    # Clear session chat logs
+    response, has_del_chat = chat_logs.clear_sess_chat_logs()
+    if response:
+        print(response)
 
-    # Clear chat history
-    clear_chat_history_response = chat.delete_chat_history()
-    print(clear_chat_history_response) if clear_chat_history_response else None
+    # file_reader = DocKnowledgeBase(session)
 
-    # Clear all files in dropbox
-    clear_session_dropbox_response  = file_reader.clear_session_dropbox()
-    print(clear_session_dropbox_response) if clear_session_dropbox_response else None
+    # # Clear all files in dropbox
+    # clear_session_dropbox_response  = file_reader.clear_session_dropbox()
+    # print(clear_session_dropbox_response) if clear_session_dropbox_response else None
+
+    # DELETE SESSION
+    # Ensure all session related contents are cleared
+    if has_del_chat:
+        cur.execute(
+            """
+            DELETE FROM chat_sessions
+            WHERE session_id = %s;
+            """,
+            (sess_id,)
+        )
+        conn.commit()
+        del_count = cur.rowcount
+        conn.commit()
+        if del_count == 0:
+            return f"Failed to delete session: session={sess_name}"
+        return f"Session deleted: session={sess_name}"
+
+    # Error message
+    del_chat_err = ""
+    if not has_del_chat:
+        del_chat_err = f"- Unable to clear session chat logs\n"
+    err_msg = (
+        f"Failed to delete session:\n"
+        f"\tSession: {sess_name}\n"
+        f"\tError:\n"
+        f"\t{del_chat_err}\n"
+    )
+    return err_msg
     
 
 # =========================================================
-# General
+# GENERAL
 #
 # Main tools:
 # - call Agent to answer question
@@ -43,18 +83,18 @@ class General:
     def question(
         model: str,
         prompt: str,
-        session: str | None = None,
+        sess_name: str | None = None,
         project: str | None = None
     ):
         """Ask question only, not flags."""
-        agent   = Agent(model=model, session=session, project=project)
+        agent   = Agent(model=model, sess_name=sess_name, project=project)
         answer  = agent.ask(prompt=prompt)
         return
 
     @staticmethod
     def reset_default():
         """Clear active conversation and chat history."""
-        _delete_session_files()
+        _del_sess()
 
     @staticmethod
     def installed_models():
@@ -66,62 +106,44 @@ class General:
 
 
 # =========================================================
-# Session class
-#
-# Main tools:
-# - call Agent to answer question
-# - delete default chat file in DEFAULT_PATH
+# SESSION CLASS
 # =========================================================
 
 class Session:
-    def __init__(self, session: str):
-        self.session    = session
-        self.chat       = Chat(session)
+    def __init__(self, sess_name: str):
+        self.sess_name  = sess_name
 
-    def create_session(self, model: str, prompt: str | None = None) -> None:
-        """
-        If no question asked:
-        - Create session.
-
-        If question was asked:
-        - Create session, model response to prompt.
-        """
-        if self.chat.active_conv_path.exists() or self.chat.chat_history_path.exists():
-            print(f"Error: Session {self.session} already exist.")
-            return
+    def create_session(
+        self,
+        model: str,
+        prompt: str | None = None
+    ) -> str | None:
+        """Create session and response to user question."""
+        self.chat_logs  = ChatLogs(sess_name=self.sess_name)
 
         if not prompt:
-            self.chat.save()
-            print(f"Created new session: {self.session}")
-            return
+            return f"New session created: session={self.sess_name}"
+        return General.question(prompt=prompt, model=model, sess_name=self.sess_name)
 
-        else:
-            return General.question(prompt=prompt, model=model, session=self.session)
-
-    def delete_session(self):
+    def delete_session(self) -> str:
         """Delete session's related files."""
-        _delete_session_files(self.session)
+        response = _del_sess(self.sess_name)
+        return response
 
-    @staticmethod
-    def list_session():
+    def list_session(self):
         """List all user created sessions, do not display session's chat history."""
-        exclude         = {config.DEFAULT_PATH.name, config.DEFAULT_CHAT_HISTORY_PATH.name}
-        all_sessions    = [
-            p.name.replace(".json", "")
-            for p in config.CHATS_DIR.glob("*.json")
-            if not p.name.endswith("_chat_history.json")
-            if p.name not in exclude
-        ]
+        self.chat_logs  = ChatLogs()
+        sess_dict = self.chat_logs.get_all_existing_sess_metadata()
 
-        print("Available session:")
-        for sessions in all_sessions:
-            print(sessions)
+        print("AVAILABLE SESSION(S)")
+        print("--------------------")
+        print("CREATED AT\t\t\t\tSESSION NAME")
+        for sess in sess_dict:
+            print(f"{sess_dict[sess]["created_at"]}\t{sess_dict[sess]["session_name"]}")
         print("\n")
 
 # =========================================================
 # File class
-#
-#
 # =========================================================
 
 class File:
@@ -136,7 +158,7 @@ class File:
         project: str | None = None
     ):
         """Combine contents in file(s) with user prompt."""
-        agent   = Agent(model=model, session=self.session, project=project)
+        agent   = Agent(model=model, sess_name=self.session, project=project)
         answer  = agent.ask(
             prompt=prompt,
             enable_attachments=True,

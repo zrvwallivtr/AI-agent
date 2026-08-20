@@ -6,7 +6,7 @@ from pathlib import Path
 from src import config
 
 
-LOG_DIR = config.DATA_DIR / "logs"
+LOG_DIR = config.APP_DIR / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "agent.log"
 

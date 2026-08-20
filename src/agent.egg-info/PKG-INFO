@@ -16,4 +16,6 @@ Requires-Dist: openpyxl
 Requires-Dist: python-docx
 Requires-Dist: ebooklib
 Requires-Dist: docling>=2.120.1
+Requires-Dist: psycopg2>=2.9.12
+Requires-Dist: dotenv>=0.9.9
 Dynamic: license-file

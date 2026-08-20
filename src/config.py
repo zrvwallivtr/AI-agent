@@ -1,11 +1,13 @@
 import tomllib
+import os
+from dotenv import load_dotenv
 
 from src import setup
 from src.error_manage import ErrorManage
 
 
 # ========================================================
-# Read-only static assets
+# READ-ONLY STATIC ASSETS
 # ========================================================
 
 BUNDLE_ROOT     = setup.get_bundle_root()
@@ -14,10 +16,10 @@ DEFAULT_CONFIG  = BUNDLE_ROOT / "config.toml"
 
 
 # ========================================================
-# Writable persistent data (stored in ~/.agent_app)
+# WRITABLE PERSISTENT DATA (STORED IN ~/.AGENT_APP)
 # ========================================================
 
-DATA_DIR        = setup.get_user_app_dir() # ~/.agent_app
+APP_DIR        = setup.get_user_app_dir() # ~/.agent_app
 APP_DATA_DIR    = setup.get_user_app_data_dir() # ~/.agent_app/data
 CUS_PROMPT_DIR  = APP_DATA_DIR / "prompts"
 CHATS_DIR       = APP_DATA_DIR / "chats"
@@ -26,12 +28,13 @@ PROJECTS_DIR    = APP_DATA_DIR / "projects"
 DROPBOX_DIR     = APP_DATA_DIR / "dropbox"
 
 # Defaults chat session paths
+ENV_PATH                    = APP_DIR / ".env"
 DEFAULT_PATH                = CHATS_DIR / "default_session" / "chat.json"
 DEFAULT_CHAT_HISTORY_PATH   = CHATS_DIR / "default_session" / "chat_history.json"
 
 setup.create_user_dir(
     [
-        DATA_DIR,
+        APP_DIR,
         APP_DATA_DIR,
         CUS_PROMPT_DIR,
         CHATS_DIR,
@@ -43,10 +46,10 @@ setup.create_user_dir(
 
 
 # ========================================================
-# Load user config file (config.toml)
+# LOAD USER CONFIG FILE (CONFIG.TOML)
 # ========================================================
 
-config_file = DATA_DIR / "config.toml"
+config_file = APP_DIR / "config.toml"
 
 setup.config_toml_handler(config_file, DEFAULT_CONFIG)
 
@@ -54,7 +57,7 @@ _cfg = tomllib.loads(config_file.read_text(encoding="utf-8"))
 
 
 # ========================================================
-# Model selection
+# MODEL SELECTION
 # ========================================================
 
 MODEL, MODEL_MAX_TOKENS     = setup.set_model_tokens(_cfg, config_file, "chat", "chat_max_tokens")
@@ -63,7 +66,7 @@ PM_MODEL, PM_MAX_TOKENS     = setup.set_model_tokens(_cfg, config_file, "project
 
 
 # ========================================================
-# Prompts
+# PROMPTS
 # ========================================================
 
 # System
@@ -103,7 +106,7 @@ GET_FILE_LIST_PROMPT_PATH, GET_FILE_LIST_PROMPT = setup.prioritise_custom_prompt
 
 
 # ========================================================
-# Memory
+# MEMORY
 # ========================================================
 
 RETRIEVE_MEM_ENTRY_LIMIT    = _cfg["memory"]["retrieve_entry_limit"]
@@ -113,7 +116,7 @@ ENABLE_AUTO_MEMORY_STORE    = _cfg["memory"]["enable_auto_memory_store"]
 
 
 # ========================================================
-# File reader
+# FILE READER
 # ========================================================
 
 # Safeguard before enabling auto read files from dropbox
@@ -123,7 +126,7 @@ DOCLING_DEFAULT             = _cfg["file_reader"]["docling_default"]
 
 
 # ========================================================
-# Web search
+# WEB SEARCH
 # ========================================================
 
 SEARCH_ENG          = _cfg["search"]["engine"]
@@ -137,3 +140,16 @@ ENABLE_AUTO_WEB_SEARCH = _cfg["search"]["enable_auto_web_search"]
 
 ErrorManage.url_check(config_file, "engine", SEARCH_ENG)
 ErrorManage.check_if_value_is_valid(config_file, "max_results", MAX_RESULTS)
+
+
+# ========================================================
+# POSTGRESQL DATABASE
+# ========================================================
+
+load_dotenv(dotenv_path=ENV_PATH)
+
+DBNAME = os.getenv("PGDB_DBNAME")
+USER = os.getenv("PGDB_USER")
+PASSWORD = os.getenv("PGDB_PASSWORD")
+HOST = os.getenv("PGDB_HOST")
+PORT = os.getenv("PGDB_PORT")
