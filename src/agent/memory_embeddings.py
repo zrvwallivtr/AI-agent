@@ -74,7 +74,7 @@ class MemoryEmbed:
         self.conn.commit()
 
     # ============================================================
-    # EMBEDDING CONTENT
+    # EMBEDDING MEMORY CONTENT
     # ============================================================
 
     def _embedding_content(self, cont: str) -> tuple[str, list[float]]:
@@ -90,7 +90,7 @@ class MemoryEmbed:
             return f"Error: {e}", []
 
     # ============================================================
-    # EDIT MEMORY EMBEDDINGS
+    # EDIT MEMORY LOGS
     # ============================================================
 
     def _add_mem_embeddings(
@@ -118,9 +118,9 @@ class MemoryEmbed:
         except Exception as e:
             self.conn.rollback()
             print(f"Database insert error: {e}")
-            return None
+            return
 
-    def _embedding_content_and_add_mem(
+    def _embed_content_and_add_mem(
         self,
         cont: str,
         ctgry: str,
@@ -191,15 +191,13 @@ class MemoryEmbed:
             (str(qry_embeddings), str(qry_embeddings), self.qry_limit)
         )
         rows = self.cur.fetchall()
-        if not rows:
-            return "Error: No memory entry found"
         return [
             {
                 "content": row[0],
                 "category": row[1],
                 "similarity": float(row[2])
             } for row in rows
-        ]
+        ] if rows else "Error: No memory entry found"
 
     # ============================================================
     # EXTRACT MEMORY
@@ -248,7 +246,7 @@ class MemoryEmbed:
 
         mem_dict = self._format_extracted_mem(ext_out, extraction)
         for cont, ctgry in mem_dict.items():
-            mem_id = self._embedding_content_and_add_mem(cont, ctgry, extraction)
+            mem_id = self._embed_content_and_add_mem(cont, ctgry, extraction)
             if mem_id:
                 created_ids.append(mem_id)
         return created_ids
@@ -306,14 +304,10 @@ class MemoryEmbed:
         enable_auto_memory_retrieve: bool,
         prompt: str
     ) -> list[dict[str, Any]] | str | None:
-        """
-        Auto memory entry ability, returns memory entries if its toggled on.
-
-        Model decides from {prompt} --> {memory_entries}
-        """
+        """Auto memory entry ability, returns memory entries if its toggled on."""
         if enable_auto_memory_retrieve == True:
             mem_dict = self.query_similar_content(prompt)
-        return None
+        return
 
     def toggle_auto_store_memory_entries(
         self,

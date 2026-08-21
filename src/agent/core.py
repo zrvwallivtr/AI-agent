@@ -7,7 +7,7 @@ from src.agent.chat_logs import ChatLogs
 #from src.agent.chat import Chat
 #from src.agent.memory import Memory
 from src.agent.cmd_functions import Command
-#from src.agent.attachments import Attachments
+from src.agent.attachments import Attachments
 #from src.tools.search import is_connected, SearchAgent
 #from src.tools.doc_knowledge_base import DocKnowledgeBase
 from src.logger import get_logger
@@ -68,7 +68,7 @@ class Agent:
         # self.memory         = Memory(project=project)
         # self.file_reader    = DocKnowledgeBase(session=session)
         self.cmd            = Command(model=model, sess_name=self.sess_name, project=project)
-        # self.attachments    = Attachments(session=session)
+        self.attachments    = Attachments(sess_name=self.sess_name)
         # self.search_agent   = SearchAgent()
 
     @property
@@ -134,6 +134,8 @@ class Agent:
     def ask(
         self,
         prompt: str,
+        is_attchmnt: bool = False,
+        file_paths: list[Path] | None = None
     ) -> None | str:
         """
         Model decide what memories to read.
@@ -148,6 +150,8 @@ class Agent:
 
         cmd, user_prompt = _detect_cmd(prompt)
 
+        # == SLASH COMMANDS ====================================
+
         if cmd:
             # Only use 'user_prompt' as 'prompt' here
             if cmd == "/memorise":
@@ -160,9 +164,7 @@ class Agent:
                 if response:
                     print(response)
                 return
-                # ==============
-                # // End here //
-                # ==============
+                # // END HERE //
 
             if cmd == "/recall":
                 logger.info("'/recall' command triggered")
@@ -170,24 +172,42 @@ class Agent:
                 response = self.cmd.cmd_recall(
                     prompt=user_prompt,
                     # enable_attachments=enable_attachments,
-                    # enable_auto_memory_retrieve=enable_auto_memory_retrieve,
                     # file_paths=file_paths
                 )
                 if response:
                     print(response)
                 return
-                # ==============
-                # // End here //
-                # ==============
-        # Model answer
-        response, p_tkns, o_tkns = LLM.model_response(messages=messages, model=self.model)
+                # // END HERE //
 
-        self.chat_logs.add_conv_turn(prompt=prompt, response=response, state="external")
+        # == MODEL ANSWER ======================================
 
+        # Attachments
+        attach_files_data = self.attachments.files(
+            is_attchmnt=is_attchmnt, file_paths=file_paths
+        )
+        attach_sect = "# Attachment(s)\n\n".join(
+            f"## Filename: {filename}\n"
+            f"Content:\n"
+            f"{content}\n\n"
+            for filename, content in attach_files_data.items()
+        ).join("---\n\n") if attach_files_data else ""
+
+        # User prompt
+        prompt_sect = (
+            f"# User prompt\n\n"
+            f"{prompt}"
+        )
+
+        cmbind_prompt = attach_sect + prompt_sect
+        messages.append({"role": "user", "content": cmbind_prompt})
+        response, p_tkns, o_tkns = LLM.model_response(
+            messages=messages, model=self.model
+        )
+        self.chat_logs.add_conv_turn(
+            prompt=prompt, response=response, state="external"
+        )
         return
-        # ==============
-        # // End here //
-        # ==============
+        # // END HERE //
 
     # def ask(
     #     self,

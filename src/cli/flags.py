@@ -43,7 +43,7 @@ def main():
     agent       = Agent(model=args.model, sess_name=args.session)
     session     = Session(args.session or args.new_session or args.delete_session)
     file        = File(args.session)
-    file_reader = DocKnowledgeBase(args.session)
+    doc_kw_bs   = DocKnowledgeBase(args.session)
 
     # =================================================================
     # Delete
@@ -96,7 +96,7 @@ def main():
             return
 
     if args.list_files:
-        file_reader.list_available_files()
+        doc_kw_bs.list_all_uploaded_files()
 
     # =================================================================
     # Project

@@ -2,8 +2,9 @@ from pathlib import Path
 
 from src.agent.llm import LLM
 from src.agent.tokens_handler import Tokens
-from src.agent.chat import Chat
+from src.agent.chat_logs import ChatLogs
 from src.tools.search import is_connected, SearchAgent
+from src.tools.parsers import Parsers
 from src.tools.doc_knowledge_base import DocKnowledgeBase
 from src import config
 from src.logger import get_logger
@@ -13,40 +14,30 @@ logger = get_logger(__name__)
 
 
 class Attachments:
-    def __init__(self, session: str | None = None):
-        self.session        = session
-        self.file_reader    = DocKnowledgeBase(session=session)
+    def __init__(self, sess_name: str | None = None):
+        self.sess_name      = sess_name
+        self.parsers        = Parsers()
+        self.doc_kw_bs      = DocKnowledgeBase(sess_name=self.sess_name)
 
     def files(
         self,
-        messages: list[dict],
-        enable_attachments: bool,
+        is_attchmnt: bool,
         file_paths: list[Path] | None
     ) -> dict[str, str]:
         """Return Attachment(s) contents"""
-        if enable_attachments == False:
+        if not is_attchmnt:
             return {}
 
         if not file_paths:
             logger.error("Unable to add extra context: No file path provided")
             return {}
 
-        logger.info("File(s) attached. Extracting content")
-        file_data = self.file_reader.read_files_with_context_prompt(
-            context=messages,
-            file_paths=file_paths
-        )
-        if not file_data:
-            logger.error("Extraction failed: Skipping")
-            return {}
-        logger.info("Extracted attachment(s) content")
-
-        # Store file into dropbox
-        logger.info("Storing file(s) into session dropbox '%s': %s", self.file_reader.dropbox_dir, file_paths)
-        files_data = {}
+        file_dict = {}
         for path in file_paths:
-            file_data, path_exists = self.file_reader.load_file_content(path)
-            files_data.update(file_data) if path_exists else None
-            content = file_data[path.name]
-            self.file_reader.store_file_in_dropbox(content, path)
-        return files_data
+            cont = self.parsers._read_file(path)
+            if not cont:
+                logger.error("Extraction failed: Skipping")
+                return {}
+            logger.info("Extracted attachment(s) content")
+            file_dict[path] = cont
+        return file_dict

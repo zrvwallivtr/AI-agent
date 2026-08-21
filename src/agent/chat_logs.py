@@ -255,7 +255,7 @@ class ChatLogs:
     # METADATA
     # =============================================================
 
-    def _attchmnts_metadata(
+    def _attachments_metadata(
         self,
         attchmnts: list[Path] | None
     ) -> dict[str, dict[str, Any]]:
@@ -280,7 +280,7 @@ class ChatLogs:
             return attchmnts_dict
         return {}
 
-    def _wb_search_metadata(
+    def _web_search_metadata(
         self,
         qry_wth_urls: list[dict[str, list[str]]] | None,
     ) -> dict[str, list[str]]:
@@ -317,9 +317,9 @@ class ChatLogs:
         """
         tool_entries = {}
         if attchmnts:
-            tool_entries["attachments"] = self._attchmnts_metadata(attchmnts)
+            tool_entries["attachments"] = self._attachments_metadata(attchmnts)
         if qry_wth_urls:
-            tool_entries["web_search"] = self._wb_search_metadata(qry_wth_urls)
+            tool_entries["web_search"] = self._web_search_metadata(qry_wth_urls)
         return tool_entries
 
     # =============================================================

@@ -204,7 +204,7 @@ class Parsers:
         return result.document.export_to_markdown()
 
     # =======================================================
-    # Programming
+    # PROGRAMMING
     # =======================================================
 
     def _read_code(self, path: Path) -> str:
@@ -213,3 +213,13 @@ class Parsers:
         content = self._read_txt(path, f"{lang}")
 
         return f"```{lang}\n{content}\n```"
+
+    # =======================================================
+    # CONNECT TO CORRECT PARSER
+    # =======================================================
+
+    def _read_file(self, path) -> str:
+        """Return content in file path."""
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        return content

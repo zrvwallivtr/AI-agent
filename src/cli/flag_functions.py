@@ -136,7 +136,7 @@ class Session:
         sess_dict = self.chat_logs.get_all_existing_sess_metadata()
 
         print("AVAILABLE SESSION(S)")
-        print("--------------------")
+        print("====================")
         print("CREATED AT\t\t\t\tSESSION NAME")
         for sess in sess_dict:
             print(f"{sess_dict[sess]["created_at"]}\t{sess_dict[sess]["session_name"]}")
@@ -147,8 +147,8 @@ class Session:
 # =========================================================
 
 class File:
-    def __init__(self, session: str):
-        self.session = session
+    def __init__(self, sess_name: str):
+        self.sess_name = sess_name
 
     def files_with_prompt(
         self,
@@ -158,10 +158,10 @@ class File:
         project: str | None = None
     ):
         """Combine contents in file(s) with user prompt."""
-        agent   = Agent(model=model, sess_name=self.session, project=project)
+        agent   = Agent(model=model, sess_name=self.sess_name, project=project)
         answer  = agent.ask(
             prompt=prompt,
-            enable_attachments=True,
+            is_attchmnt=True,
             file_paths=file_paths
         )
         return
