@@ -9,3 +9,7 @@ MODEL_MAX = {
     "embeddinggemma":   2048,
     "all-minilm":       512,
 }
+
+EMB_MODEL_DIMENSION = {
+    "nomic-embed-text": 768,
+}

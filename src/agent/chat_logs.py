@@ -28,7 +28,7 @@ class ChatLogs:
         self.convs          = self.get_entire_conv()
 
     def _init_chat_logs_db(self):
-        """Create session lookup and chat log table if missing."""
+        """Create session lookup and chat logs table if missing."""
         self.cur.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_sessions (
@@ -119,6 +119,55 @@ class ChatLogs:
         if not sess_id:
             sess_id = self._create_sess()
         return sess_id
+
+    # =============================================================
+    # EDIT CHAT LOGS
+    # =============================================================
+
+    def add_conv_turn(
+        self,
+        prompt: str,
+        response: str,
+        state: Literal["external", "internal"],
+        attchmnts: list[Path] | None = None,
+        qry_wth_urls: list[dict[str, list[str]]] | None = None,
+        p_tkns: int = 0,
+        o_tkns: int = 0
+    ):
+        """
+        Insert new conversation turn including metadata 
+        into the specified session database table.
+
+        State:
+        - 'internal': Pre-written prompt.
+        - 'external': User/model interactions.
+        """
+        metadata = self._tool_calls_metadata(attchmnts, qry_wth_urls)
+        self.cur.execute(
+            """
+            INSERT INTO chat_logs (session_id, prompt, response, state, metadata)
+            VALUES (%s, %s, %s, %s, %s);
+            """,
+            (self.sess_id, prompt, response, state, json.dumps(metadata or {}))
+        )
+        self.conn.commit()
+        self.convs = self.get_entire_conv() # resync messages
+
+    def clear_sess_chat_logs(self) -> tuple[str, bool]:
+        """Clear session related all chat logs."""
+        self.cur.execute(
+            """
+            DELETE FROM chat_logs
+            WHERE session_id = %s;
+            """,
+            (self.sess_id,)
+        )
+        del_count = self.cur.rowcount
+        self.conn.commit()
+        if del_count == 0: # Noting is deleted
+            return f"Failed to clear chat log(s). Chat logs or session not found: session={self.sess_name}", False
+        self.convs = self.get_entire_conv() # resync messages
+        return f"Cleared chat log(s): session={self.sess_name}", True
 
     # =============================================================
     # FROM CHAT LOGS
@@ -233,7 +282,7 @@ class ChatLogs:
 
     def _wb_search_metadata(
         self,
-        q_wth_urls: list[dict[str, list[str]]] | None,
+        qry_wth_urls: list[dict[str, list[str]]] | None,
     ) -> dict[str, list[str]]:
         """
         Add all URL(s) to every query in the list of queries.
@@ -246,17 +295,17 @@ class ChatLogs:
             ]
         }
         """
-        if q_wth_urls:
+        if qry_wth_urls:
             wb_search_dict = {}
-            for q_dict in q_wth_urls:
-                wb_search_dict.update(q_dict)
+            for qry_dict in qry_wth_urls:
+                wb_search_dict.update(qry_dict)
             return wb_search_dict
         return {}
 
     def _tool_calls_metadata(
         self,
         attchmnts: list[Path] | None = None,
-        q_wth_urls: list[dict[str, list[str]]] | None = None,
+        qry_wth_urls: list[dict[str, list[str]]] | None = None,
     ) -> dict[str, dict[str, Any]]:
         """
         Return a dictionary of all tool calls.
@@ -269,58 +318,9 @@ class ChatLogs:
         tool_entries = {}
         if attchmnts:
             tool_entries["attachments"] = self._attchmnts_metadata(attchmnts)
-        if q_wth_urls:
-            tool_entries["web_search"] = self._wb_search_metadata(q_wth_urls)
+        if qry_wth_urls:
+            tool_entries["web_search"] = self._wb_search_metadata(qry_wth_urls)
         return tool_entries
-
-    # =============================================================
-    # EDIT CHAT LOGS
-    # =============================================================
-
-    def add_conv_turn(
-        self,
-        prompt: str,
-        response: str,
-        state: Literal["external", "internal"],
-        attchmnts: list[Path] | None = None,
-        q_wth_urls: list[dict[str, list[str]]] | None = None,
-        p_tkns: int = 0,
-        o_tkns: int = 0
-    ):
-        """
-        Insert new conversation turn including metadata 
-        into the specified session database table.
-
-        State:
-        - 'internal': Pre-written prompt.
-        - 'external': User/model interactions.
-        """
-        metadata = self._tool_calls_metadata(attchmnts, q_wth_urls)
-        self.cur.execute(
-            """
-            INSERT INTO chat_logs (session_id, prompt, response, state, metadata)
-            VALUES (%s, %s, %s, %s, %s);
-            """,
-            (self.sess_id, prompt, response, state, json.dumps(metadata or {}))
-        )
-        self.conn.commit()
-        self.convs = self.get_entire_conv() # resync messages
-
-    def clear_sess_chat_logs(self) -> tuple[str, bool]:
-        """Clear session related all chat logs."""
-        self.cur.execute(
-            """
-            DELETE FROM chat_logs
-            WHERE session_id = %s;
-            """,
-            (self.sess_id,)
-        )
-        del_count = self.cur.rowcount
-        self.conn.commit()
-        if del_count == 0: # Noting is deleted
-            return f"Failed to clear chat log(s). Chat logs or session not found: session={self.sess_name}", False
-        self.convs = self.get_entire_conv() # resync messages
-        return f"Cleared chat log(s): session={self.sess_name}", True
 
     # =============================================================
     # Exit

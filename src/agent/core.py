@@ -6,7 +6,7 @@ from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
 #from src.agent.chat import Chat
 #from src.agent.memory import Memory
-#from src.agent.cmd_functions import Command
+from src.agent.cmd_functions import Command
 #from src.agent.attachments import Attachments
 #from src.tools.search import is_connected, SearchAgent
 #from src.tools.doc_knowledge_base import DocKnowledgeBase
@@ -67,7 +67,7 @@ class Agent:
         # self.chat           = Chat(session=session)
         # self.memory         = Memory(project=project)
         # self.file_reader    = DocKnowledgeBase(session=session)
-        # self.command        = Command(model=model, session=session, project=project)
+        self.cmd            = Command(model=model, sess_name=self.sess_name, project=project)
         # self.attachments    = Attachments(session=session)
         # self.search_agent   = SearchAgent()
 
@@ -146,6 +146,39 @@ class Agent:
         messages = self.chat_logs.get_entire_conv()
         messages.append({"role": "user", "content": prompt})
 
+        cmd, user_prompt = _detect_cmd(prompt)
+
+        if cmd:
+            # Only use 'user_prompt' as 'prompt' here
+            if cmd == "/memorise":
+                logger.info("'/memorise' command triggered")
+                response = self.cmd.cmd_memorise(
+                    prompt=user_prompt,
+                    # enable_attachments=enable_attachments,
+                    # file_paths=file_paths
+                )
+                if response:
+                    print(response)
+                return
+                # ==============
+                # // End here //
+                # ==============
+
+            if cmd == "/recall":
+                logger.info("'/recall' command triggered")
+                # User's question and agent's response were saved
+                response = self.cmd.cmd_recall(
+                    prompt=user_prompt,
+                    # enable_attachments=enable_attachments,
+                    # enable_auto_memory_retrieve=enable_auto_memory_retrieve,
+                    # file_paths=file_paths
+                )
+                if response:
+                    print(response)
+                return
+                # ==============
+                # // End here //
+                # ==============
         # Model answer
         response, p_tkns, o_tkns = LLM.model_response(messages=messages, model=self.model)
 
