@@ -96,7 +96,7 @@ class LLM:
     # =====================================================================
 
     @staticmethod
-    def model_response(messages: list[dict], model: str) -> tuple[str, int, int]:
+    def model_response(msgs: list[dict], model: str) -> tuple[str, int, int]:
         """Response using specified model, streams output."""
         response = ""
         line_buffer = ""
@@ -106,7 +106,7 @@ class LLM:
         o_tkns   = 0
 
         # Send message to the model
-        stream = ollama.chat(model=model, messages=messages, stream=True)
+        stream = ollama.chat(model=model, messages=msgs, stream=True)
 
         # Stream model output in markdown
         for chunk in stream:
@@ -170,17 +170,19 @@ class LLM:
     ) -> tuple[str, int, int]:
         """Combines a system prompt, context and question with model response."""
         if context:
-            context_without_system_prompt   = [msg for msg in context if msg["role"] != "system"]
-            messages                        = [LLM.system(system_prompt)] + context_without_system_prompt + [LLM.user(prompt)]
-
+            context_without_system_prompt = [msg for msg in context if msg["role"] != "system"]
+            msgs = (
+                [LLM.system(system_prompt)]
+                + context_without_system_prompt
+                + [LLM.user(prompt)]
+            )
         else:
-            messages = [LLM.system(system_prompt)] + [LLM.user(prompt)]
+            msgs = [LLM.system(system_prompt)] + [LLM.user(prompt)]
 
-        response        = ollama.chat(model=model, messages=messages)
+        response        = ollama.chat(model=model, messages=msgs)
         content         = response.message.content
         p_tkns   = getattr(response, "prompt_eval_cound", 0) or 0
         o_tkns   = getattr(response, "eval_cound", 0) or 0
-
         return content, p_tkns, o_tkns
 
     # =====================================================================
@@ -191,17 +193,17 @@ class LLM:
     def response_memory_recall_format(
         model: str,
         system_prompt: str,
-        recalled: str,
         prompt: str,
         context: list[dict] | None = None
     ) -> ollama.ChatResponse:
         """Model reponse with memory recall system prompt and format."""
         if context:
-            formatted_prompt                = f"# User prompt\n\n{prompt}\n\n---\n\n{recalled}"
-            context_without_system_prompt   = [msg for msg in context if msg["role"] != "system"]
-            messages                        = [LLM.system(system_prompt)] + context_without_system_prompt + [LLM.user(formatted_prompt)]
-
+            context_without_system_prompt = [msg for msg in context if msg["role"] != "system"]
+            msgs = (
+                [LLM.system(system_prompt)]
+                + context_without_system_prompt
+                + [LLM.user(prompt)]
+            )
         else:
-            messages = [LLM.system(system_prompt)] + [LLM.user(prompt)]
-
-        return LLM.model_response(messages, model)
+            msgs = [LLM.system(system_prompt)] + [LLM.user(prompt)]
+        return LLM.model_response(msgs, model)

@@ -20,9 +20,8 @@ cur = conn.cursor()
 
 def _del_sess(sess_name: str | None = None) -> str:
     """
-    Delete session related files. If 'session'
-    is not specified, delete default session 
-    related files.
+    Delete session related chat logs and database contents. If 'session'
+    is not specified, delete default session related contents.
     """
     chat_logs = ChatLogs(sess_name=sess_name)
     sess_id = chat_logs.get_sess_id()
@@ -150,18 +149,18 @@ class File:
     def __init__(self, sess_name: str):
         self.sess_name = sess_name
 
-    def files_with_prompt(
+    def attachments_with_prompt(
         self,
         model: str,
         prompt: str,
-        file_paths: list[Path],
+        paths: list[Path],
         project: str | None = None
     ):
-        """Combine contents in file(s) with user prompt."""
+        """Combine contents in document(s) with user prompt."""
         agent   = Agent(model=model, sess_name=self.sess_name, project=project)
         answer  = agent.ask(
             prompt=prompt,
             is_attchmnt=True,
-            file_paths=file_paths
+            paths=paths
         )
         return

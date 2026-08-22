@@ -1,15 +1,15 @@
+from operator import is_
 import ollama
 from pathlib import Path
 
 from src.agent.llm import LLM
 from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
-#from src.agent.chat import Chat
-#from src.agent.memory import Memory
+from src.agent.memory import Memory
 from src.agent.cmd_functions import Command
-from src.agent.attachments import Attachments
 #from src.tools.search import is_connected, SearchAgent
-#from src.tools.doc_knowledge_base import DocKnowledgeBase
+from src.tools.documents import Document
+from src.tools.knowledge_base import KnowledgeBase
 from src.logger import get_logger
 from src import config
 
@@ -17,9 +17,9 @@ from src import config
 logger = get_logger(__name__)
 
 
-def _last_token_usage(messages: list[dict]) -> tuple[int, int]:
+def _last_token_usage(msgs: list[dict]) -> tuple[int, int]:
     """Returns p_tkns and o_tkns from the latest assistant message."""
-    for msg in reversed(messages):
+    for msg in reversed(msgs):
 
         if msg["role"] == "assistant":
             p_tkns = msg.get("p_tkns", 0)
@@ -60,15 +60,14 @@ class Agent:
         else:
             self.tokens = Tokens(model)
 
-        self.model          = model  # model is specified in the config file
+        self.model          = model
         self.sess_name      = sess_name
         self.project        = project
         self.chat_logs      = ChatLogs(sess_name=self.sess_name)
-        # self.chat           = Chat(session=session)
-        # self.memory         = Memory(project=project)
-        # self.file_reader    = DocKnowledgeBase(session=session)
+        self.mem            = Memory(project=project)
+        self.kw_bs          = KnowledgeBase(sess_name=self.sess_name)
         self.cmd            = Command(model=model, sess_name=self.sess_name, project=project)
-        self.attachments    = Attachments(sess_name=self.sess_name)
+        self.doc            = Document(sess_name=self.sess_name)
         # self.search_agent   = SearchAgent()
 
     @property
@@ -134,8 +133,9 @@ class Agent:
     def ask(
         self,
         prompt: str,
+        is_auto_mem_rtve: bool = True,
         is_attchmnt: bool = False,
-        file_paths: list[Path] | None = None
+        paths: list[Path] | None = None
     ) -> None | str:
         """
         Model decide what memories to read.
@@ -145,8 +145,7 @@ class Agent:
         - Only the user question and LLM response will be
           stored into chat history.
         """
-        messages = self.chat_logs.get_entire_conv()
-        messages.append({"role": "user", "content": prompt})
+        msgs = self.chat_logs.get_entire_conv()
 
         cmd, user_prompt = _detect_cmd(prompt)
 
@@ -156,10 +155,11 @@ class Agent:
             # Only use 'user_prompt' as 'prompt' here
             if cmd == "/memorise":
                 logger.info("'/memorise' command triggered")
+                msgs.append({"role": "user", "content": user_prompt})
                 response = self.cmd.cmd_memorise(
                     prompt=user_prompt,
-                    # enable_attachments=enable_attachments,
-                    # file_paths=file_paths
+                    is_attchmnt=is_attchmnt,
+                    paths=paths
                 )
                 if response:
                     print(response)
@@ -168,29 +168,91 @@ class Agent:
 
             if cmd == "/recall":
                 logger.info("'/recall' command triggered")
-                # User's question and agent's response were saved
+                msgs.append({"role": "user", "content": user_prompt})
                 response = self.cmd.cmd_recall(
                     prompt=user_prompt,
-                    # enable_attachments=enable_attachments,
-                    # file_paths=file_paths
+                    is_attchmnt=is_attchmnt,
+                    paths=paths
                 )
                 if response:
                     print(response)
                 return
                 # // END HERE //
 
-        # == MODEL ANSWER ======================================
+            # if cmd == "/search":
+            #     logger.info("'/search' command tirggered")
+            #     # User's question were saved
+            #     messages.append({"role": "user", "content": user_prompt})
+            #     response = self.command.cmd_search(
+            #         prompt=user_prompt,
+            #         enable_attachments=enable_attachments,
+            #         file_paths=file_paths
+            #     )
+            #     if response:
+            #         print(response)
+            #     self.memory.toggle_auto_store_memory_entries(
+            #         enable_auto_memory_store= True,
+            #         model_max_tokens=self.get_model_max_tokens,
+            #         context=self.chat.to_llm()
+            #     )
+            #     return
+                # // End here //
 
-        # Attachments
-        attach_files_data = self.attachments.files(
-            is_attchmnt=is_attchmnt, file_paths=file_paths
+        # == FULL CONTEXT ======================================
+
+        # Auto retrieve memory
+        mem_list = self.mem.toggle_auto_retrive_memory_entries(
+            is_auto_mem_rtve=is_auto_mem_rtve, prompt=prompt
+        )
+        mem_sect = "# Retrieved memory(s)\n\n".join(
+            f"## Memory\n"
+            f"Content: {item['content']}\n"
+            f"Similarity score: {item['similarity']}\n"
+            for item in mem_list
+        ).join("---\n\n") if isinstance(mem_list, list) and mem_list else ""
+
+        # Attachments (manual call by user)
+        attchmnt_dict = self.doc.get_attachments_content(
+            is_attchmnt=is_attchmnt, doc_paths=paths
         )
         attach_sect = "# Attachment(s)\n\n".join(
-            f"## Filename: {filename}\n"
+            f"## Document name: {doc_name}\n"
             f"Content:\n"
             f"{content}\n\n"
-            for filename, content in attach_files_data.items()
-        ).join("---\n\n") if attach_files_data else ""
+            for doc_name, content in attchmnt_dict.items()
+        ).join("---\n\n") if attchmnt_dict else ""
+
+        # Auto read knowledge base
+        # - Could add user specify retrieve list no. during session, if not specified use default.
+        # dropbox_file_data = self.file_reader.toggle_auto_read_dropbox(
+        #     messages=messages, 
+        #     prompt=prompt,
+        #     memory_entries=memory_entries, 
+        #     enable_attachments=enable_attachments,
+        #     attach_file_data=attach_files_data,
+        #     enable_auto_read_dropbox=enable_auto_read_dropbox
+        # )
+        # dropbox_sect = "# Previously uploaded file(s)\n\n".join(
+        #     f"Filename: {filename}\n"
+        #     f"Content: {content}\n\n"
+        #     for filename, content in dropbox_file_data.items()
+        # ).join("---\n\n")
+
+        # Auto web search
+        # search_results, query_with_urls, search = self.search_agent.toggle_auto_web_search(
+        #     messages=messages,
+        #     prompt=prompt,
+        #     enable_attachments=enable_attachments,
+        #     enable_auto_web_search=enable_auto_web_search,
+        #     memory_entries=memory_entries,
+        #     file_contents=dropbox_file_data,
+        #     attach_file_data=attach_files_data,
+        # )
+        # web_search_sect = (
+        #     f"# Web search results\n\n"
+        #     f"{search_results}\n\n"
+        #     f"---\n\n"
+        # )
 
         # User prompt
         prompt_sect = (
@@ -198,198 +260,36 @@ class Agent:
             f"{prompt}"
         )
 
-        cmbind_prompt = attach_sect + prompt_sect
-        messages.append({"role": "user", "content": cmbind_prompt})
+        cmbind_prompt = mem_sect + attach_sect + prompt_sect
+        msgs.append({"role": "user", "content": cmbind_prompt})
+
+        # == MODEL ANSWER ======================================
+
         response, p_tkns, o_tkns = LLM.model_response(
-            messages=messages, model=self.model
+            msgs=msgs, model=self.model
         )
         self.chat_logs.add_conv_turn(
-            prompt=prompt, response=response, state="external"
+            prompt=prompt,
+            response=response,
+            state="external",
+            attchmnts=paths,
+            p_tkns=p_tkns,
+            o_tkns=o_tkns
         )
+
+        # == STORE MEMORY(S) ===================================
+
+        # self.memory.toggle_auto_store_memory_entries(
+        #     enable_auto_memory_store=True,
+        #     model_max_tokens=self.get_model_max_tokens,
+        #     context=self.chat.to_llm()
+        # )
+
+        # == STORE ATTACHMENT(S) ===============================
+
+        if paths:
+            for path in paths:
+                notify = self.kw_bs.embed_and_add_doc_to_kw_bs(path)
+                print(notify)
         return
         # // END HERE //
-
-    # def ask(
-    #     self,
-    #     prompt: str,
-    #     enable_attachments: bool = False,
-    #     enable_auto_memory_retrieve: bool = config.ENABLE_AUTO_MEMORY_RETRIEVE,
-    #     enable_auto_memory_store: bool = config.ENABLE_AUTO_MEMORY_STORE,
-    #     enable_auto_web_search: bool = config.ENABLE_AUTO_WEB_SEARCH,
-    #     enable_auto_read_dropbox: bool = config.ENABLE_AUTO_READ_DROPBOX,
-    #     file_paths: list[Path] | None = None
-    # ) -> None | str:
-    #     """
-    #     Model decide what memories to read.
-    #     Manage tokens, compress session if needed.
-
-    #     Note:
-    #     - Only the user question and LLM response will be
-    #       stored into chat history.
-    #     """
-    #     # self._manage_token_budget(prompt)
-
-    #     cmd, user_prompt = _detect_cmd(prompt)
-
-    #     if cmd:
-    #         # Only use 'user_prompt' as 'prompt' here
-
-    #         if cmd == "/forget":
-    #             logger.info("'/forget' command triggered")
-    #             response = self.command.cmd_forget(user_prompt)
-    #             if response:
-    #                 print(response)
-    #             return
-    #             # ==============
-    #             # // End here //
-    #             # ==============
-
-    #         if cmd == "/memorise":
-    #             logger.info("'/memorise' command triggered")
-    #             response = self.command.cmd_memorise(
-    #                 prompt=user_prompt,
-    #                 enable_attachments=enable_attachments,
-    #                 file_paths=file_paths
-    #             )
-    #             if response:
-    #                 print(response)
-    #             return
-    #             # ==============
-    #             # // End here //
-    #             # ==============
-
-    #         if cmd == "/recall":
-    #             logger.info("'/recall' command triggered")
-    #             # User's question and agent's response were saved
-    #             response = self.command.cmd_recall(
-    #                 prompt=user_prompt,
-    #                 enable_attachments=enable_attachments,
-    #                 enable_auto_memory_retrieve=enable_auto_memory_retrieve,
-    #                 file_paths=file_paths
-    #             )
-    #             if response:
-    #                 print(response)
-    #             return
-    #             # ==============
-    #             # // End here //
-    #             # ==============
-
-    #         if cmd == "/search":
-    #             logger.info("'/search' command tirggered")
-    #             # User's question were saved
-    #             response = self.command.cmd_search(
-    #                 prompt=user_prompt,
-    #                 enable_attachments=enable_attachments,
-    #                 file_paths=file_paths
-    #             )
-    #             if response:
-    #                 print(response)
-    #             self.memory.toggle_auto_store_memory_entries(
-    #                 enable_auto_memory_store= True,
-    #                 model_max_tokens=self.get_model_max_tokens,
-    #                 context=self.chat.to_llm()
-    #             )
-    #             return
-    #             # ==============
-    #             # // End here //
-    #             # ==============
-
-    #     messages = self.chat.to_llm()
-
-    #     # Retrieve memory entries
-    #     memory_entries = self.memory.toggle_auto_retrive_memory_entry(
-    #         enable_auto_memory_retrieve=enable_auto_memory_retrieve, 
-    #         prompt=prompt
-    #     )
-    #     memory_sect = (
-    #         f"# Retrieved memory entry(s)\n\n"
-    #         f"{memory_entries}\n\n"
-    #         f"---\n\n"
-    #     )
-
-    #     # Attachments
-    #     attach_files_data = self.attachments.files(
-    #         messages=messages,
-    #         enable_attachments=enable_attachments,
-    #         file_paths=file_paths
-    #     )
-    #     attach_sect = "# Attachment(s)\n\n".join(
-    #         f"Filename: {filename}\n"
-    #         f"Content: {content}\n\n"
-    #         for filename, content in attach_files_data.items()
-    #     ) if attach_files_data else ""
-
-    #     # Auto read dropbox
-    #     dropbox_file_data, found_file_paths, read_dropbox = self.file_reader.toggle_auto_read_dropbox(
-    #         messages=messages, 
-    #         prompt=prompt,
-    #         memory_entries=memory_entries, 
-    #         enable_attachments=enable_attachments,
-    #         attach_file_data=attach_files_data,
-    #         enable_auto_read_dropbox=enable_auto_read_dropbox
-    #     )
-    #     dropbox_sect = "# Previously uploaded file(s)\n\n".join(
-    #         f"Filename: {filename}\n"
-    #         f"Content: {content}\n\n"
-    #         for filename, content in dropbox_file_data.items()
-    #     ).join("---\n\n")
-
-    #     # Auto web search
-    #     search_results, query_with_urls, search = self.search_agent.toggle_auto_web_search(
-    #         messages=messages,
-    #         prompt=prompt,
-    #         enable_attachments=enable_attachments,
-    #         enable_auto_web_search=enable_auto_web_search,
-    #         memory_entries=memory_entries,
-    #         file_contents=dropbox_file_data,
-    #         attach_file_data=attach_files_data,
-    #     )
-    #     web_search_sect = (
-    #         f"# Web search results\n\n"
-    #         f"{search_results}\n\n"
-    #         f"---\n\n"
-    #     )
-
-    #     # Prompt
-    #     prompt_sect = (
-    #         f"# User prompt\n\n"
-    #         f"{prompt}\n\n"
-    #         f"---\n\n"
-    #     )
-
-    #     # Model answer
-    #     cmbind_prompt = memory_sect + dropbox_sect + web_search_sect + prompt_sect + attach_sect
-    #     messages.append({
-    #         "role": "user",
-    #         "content": cmbind_prompt
-    #     })
-    #     answer, p_tkns, o_tkns = LLM.model_response(messages=messages, model=self.model)
-
-    #     # Save messages
-    #     self.chat.append_user_message_with_metadata(content=prompt, state="external")
-    #     self.chat.append_assistant_message_with_metadata(
-    #         content=answer,
-    #         state="external",
-    #         attachments=found_file_paths,
-    #         query_with_urls=query_with_urls,
-    #         p_tkns=p_tkns,
-    #         o_tkns=o_tkns
-    #     )
-
-    #     # Update dropbox metadata
-    #     if file_paths:
-    #         logger.info("Updating dropbox metadata for: %s", str(file_paths))
-    #         print("Updataing dropbox metadata...")
-    #         self.file_reader.add_metadata_and_summary(attach_files_data)
-    #     
-    #     self.memory.toggle_auto_store_memory_entries(
-    #         enable_auto_memory_store= True,
-    #         model_max_tokens=self.get_model_max_tokens,
-    #         context=self.chat.to_llm()
-    #     )
-
-    #     return
-    #     # ==============
-    #     # // End here //
-    #     # ==============
-

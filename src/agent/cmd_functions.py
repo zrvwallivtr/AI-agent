@@ -5,10 +5,9 @@ from pathlib import Path
 from src.agent.llm import LLM
 from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
-from src.agent.memory_embeddings import MemoryEmbed
-from src.agent.attachments import Attachments
+from src.agent.memory import Memory
+from src.tools.documents import Document
 from src.tools.search import is_connected, SearchAgent
-from src.tools.doc_knowledge_base import DocKnowledgeBase
 from src import config
 from src.logger import get_logger
 
@@ -27,47 +26,19 @@ class Command:
         self.sess_name      = sess_name
         self.project        = project
         self.chat_logs      = ChatLogs(sess_name=self.sess_name)
-        self.mem_emb        = MemoryEmbed(project=self.project)
-        # self.file_reader    = DocKnowledgeBase(session=self.sess_name)
-        # self.attachments    = Attachments(session=self.sess_name)
+        self.mem            = Memory(project=self.project)
+        self.doc            = Document(sess_name=self.sess_name)
         # self.search_agent   = SearchAgent()
 
     # ========================================================
     # Memory
     # ========================================================
 
-    # def cmd_forget(self, prompt: str) -> str:
-    #     """
-    #     Find exact match in memory from user prompt and remove said entry.
-    #     Note: User's question won't be saved.
-    #     """
-    #     if not prompt:
-    #         logger.warning("Command '/forget' aborted: No prompt was provided")
-    #         return "Please specify what to forget."
-
-    #     match_data = self.memory.get_exact_match(prompt)
-
-    #     if not match_data:
-    #         logger.warning("Command '/forget' failed: No matching memory entry found")
-    #         return f"Error: No matching memory found."
-
-    #     target_id, matched_content = match_data
-
-    #     # User confirm options
-    #     print(f"Warning: [ChromaDB] Initializing delte sequence for: '{matched_content}...'")
-    #     choice = input("Press [Enter] to confirm deletion or type [c] to cancel:")
-    #     if choice == "c":
-    #         logger.info("Memory deletion cancelled by the user")
-    #         return "Deletion cancelled."
-    #     self.memory.delete_from_db([target_id])
-    #     logger.info("Deleted memory entry from database (target_id=%s)", target_id)
-    #     return "Entry deleted."
-
     def cmd_memorise(
         self,
         prompt: str,
-        # enable_attachments: bool,
-        # file_paths: list[Path] | None = None
+        is_attchmnt: bool,
+        paths: list[Path] | None = None
     ) -> str:
         """
         Extract key info from user prompt and attachments (optional),
@@ -82,31 +53,33 @@ class Command:
 
         messages = self.chat_logs.get_entire_conv()
 
-        # Read attachments (optional)
-        # attachments_content = None
-        # if enable_attachments == True:
-        #     attachments_content = self.attachments.files(
-        #         messages=messages,
-        #         enable_attachments=enable_attachments,
-        #         file_paths=file_paths,
-        #     )
-        #     logger.info("Retrieved extra context from uploaded files")
+        # Attachments (manual call by user)
+        attchmnt_dict = self.doc.get_attachments_content(
+            is_attchmnt=is_attchmnt, doc_paths=paths
+        )
+        attach_sect = "# Attachment(s)\n\n".join(
+            f"## Document name: {doc_name}\n"
+            f"Content:\n"
+            f"{content}\n\n"
+            for doc_name, content in attchmnt_dict.items()
+        ).join("---\n\n") if attchmnt_dict else ""
 
-        # Format messages and extract memory
-        # cmbind_prompt = (
-        #     f"User prompt\n\n"
-        #     f"{prompt}\n\n"
-        #     f"---\n\n"
-        #     f"Attachment(s)\n\n"
-        #     f"{attachments_content}"
-        # ) if attachments_content else prompt
+        # User prompt
+        prompt_sect = (
+            f"# User prompt\n\n"
+            f"{prompt}"
+        )
 
-        messages.append({"role": "user", "content": prompt})
+        cmbind_prompt = attach_sect + prompt_sect
+        messages.append({"role": "user", "content": cmbind_prompt})
+
         print(f"Extracting content from user's input...")
-        created_ids, p_tkns, o_tkns = self.mem_emb.extract_and_store_mem_from_conv(extraction="manual", prompt=prompt)
+        created_ids, p_tkns, o_tkns = self.mem.extract_and_store_mem_from_conv(
+            extraction="manual", prompt=prompt
+        )
 
         # Print to terminal
-        mem_dict = self.mem_emb.get_mem_content_from_ids(created_ids)
+        mem_dict = self.mem.get_mem_content_from_ids(created_ids)
         if mem_dict:
             print("CONTENT SAVED:")
             for cont, ctgry in mem_dict.items():
@@ -117,7 +90,7 @@ class Command:
         # User confirm options
         choice = input("Press [Enter] to continue or type [u] to undo:")
         if choice == "u":
-            self.mem_emb.delete_mem(created_ids)
+            self.mem.delete_mem(created_ids)
             return "Entry deleted."
 
         # Save messages
@@ -126,6 +99,7 @@ class Command:
             prompt=prompt,
             response=confirmation,
             state="external",
+            attchmnts=paths,
             p_tkns=p_tkns,
             o_tkns=o_tkns
         )
@@ -134,60 +108,47 @@ class Command:
     def cmd_recall(
         self,
         prompt: str,
-        # enable_attachments: bool,
-        # enable_auto_memory_retrieve: bool,
-        # file_paths: list[Path] | None = None
+        is_attchmnt: bool,
+        paths: list[Path] | None = None
     ) -> str | None:
-        """
-        Retrieve and print relevant entries according to user prompt.
-
-        Model interpret:
-        {attachments (optional)} + {memory entries}
-        """
+        """Retrieve and print relevant entries according to user prompt."""
         if not prompt:
             logger.warning("Command '/recall' aborted: No prompt was provided")
             return "Please specify what to recall."
 
         messages = self.chat_logs.get_entire_conv()
 
-        # Read attachments (optional)
-        # attachments_content = None
-        # if enable_attachments == True:
-        #     attachments_content = self.attachments.files(
-        #         messages=messages,
-        #         enable_attachments=enable_attachments,
-        #         file_paths=file_paths,
-        #     )
-        #     logger.info("Retrieved extra context from uploaded files")
-
         # Retrieve memory(s)
-        mem_entries = self.mem_emb.query_similar_content(prompt)
-        if isinstance(mem_entries, str):
-            return mem_entries
-        mem_recalled = ""
-        for entry in mem_entries:
-            cont = entry["content"]
-            ctgry = entry["category"]
-            score = entry["similarity"]
-            mem_recalled += f"* [{ctgry}] {cont} (similarity: {score:.2f})\n"
+        mem_list = self.mem.query_similar_content(prompt)
+        mem_sect = "# Retrieved memory(s)\n\n".join(
+            f"## Memory\n"
+            f"Content: {item['content']}\n"
+            f"Similarity score: {item['similarity']}\n"
+            for item in mem_list
+        ).join("---\n\n") if isinstance(mem_list, list) and mem_list else ""
+
+        # Attachments (manual call by user)
+        attchmnt_dict = self.doc.get_attachments_content(
+            is_attchmnt=is_attchmnt, doc_paths=paths
+        )
+        attach_sect = "# Attachment(s)\n\n".join(
+            f"## Document name: {doc_name}\n"
+            f"Content:\n"
+            f"{content}\n\n"
+            for doc_name, content in attchmnt_dict.items()
+        ).join("---\n\n") if attchmnt_dict else ""
+
+        # User prompt
+        prompt_sect = (
+            f"# User prompt\n\n"
+            f"{prompt}"
+        )
 
         # Model interpret recalled memory(s)
-        mem_sect = (
-            f"# Recalled entry(s)\n\n"
-            f"{mem_recalled}\n\n"
-            f"--\n\n"
-        ) if mem_recalled else ""
-        # attachments_sect = (
-        #     f"# Attachment(s)\n\n"
-        #     f"{attachments_content}\n\n"
-        #     if attachments_content else ""
-        # )
-        # cmbind_prompt = mem_sect + attachments_sect
-        cmbind_prompt = mem_sect
+        cmbind_prompt = mem_sect + attach_sect + prompt_sect
         answer, p_tkns, o_tkns = LLM.response_memory_recall_format(
-            model=self.mem_emb.model,
+            model=self.mem.model,
             system_prompt=config.MEM_RECALL_INTERPRET_PROMPT,
-            recalled=cmbind_prompt,
             prompt=prompt,
             context=messages
         )
@@ -197,6 +158,7 @@ class Command:
             prompt=prompt,
             response=answer,
             state="external",
+            attchmnts=paths,
             p_tkns=p_tkns,
             o_tkns=o_tkns
         )

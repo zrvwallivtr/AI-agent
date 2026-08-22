@@ -67,13 +67,13 @@ class Tokens:
             return 0
         return len(self.encoder.encode(text))
 
-    def count_history_tokens(self, messages: list[dict]) -> int:
+    def count_history_tokens(self, msgs: list[dict]) -> int:
         """Calculates total token weight."""
         total_tokens = 0
 
-        for message in messages:
+        for msg in msgs:
             # Account for message content text
-            total_tokens += self.count_string_tokens(message.get("content", ""))
+            total_tokens += self.count_string_tokens(msg.get("content", ""))
 
             # For tags (e.g. 'assistant'/'user')
             total_tokens += 4

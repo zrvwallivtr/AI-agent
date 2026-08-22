@@ -136,7 +136,6 @@ def is_connected(host="1.1.1.1", port=53, timeout=3):
         # Attempt to connect to the host
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((host, port))
-
         return True
 
     except (socket.timeout, OSError):
