@@ -244,7 +244,9 @@ class Agent:
         #     f"---\n\n"
         # )
 
-        cmbind_prompt = fmt_cont.build_prompt(mem_list, attchmnt_dict, prompt)
+        cmbind_prompt = fmt_cont.build_prompt(
+            prompt=prompt, mem_list=mem_list, attchmnt_dict=attchmnt_dict
+        )
         msgs.append({"role": "user", "content": cmbind_prompt})
 
         # == MODEL ANSWER ======================================

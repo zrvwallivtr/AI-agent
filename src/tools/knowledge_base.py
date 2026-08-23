@@ -50,30 +50,37 @@ class KnowledgeBase:
             CREATE EXTENSION IF NOT EXISTS VECTOR;
             """
         )
-        #  create_kw_bs_tbl = sql.SQL("""
-        #      CREATE TABLE IF NOT EXISTS knowledge_base (
-        #          id              BIGSERIAL PRIMARY KEY,
-        #          session_id      VARCHAR(255) NOT NULL,
-        #          created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        #          type            VARCHAR(20) NOT NULL,
-        #          embedding       VECTOR({dimension}),
-        #          content         TEXT NOT NULL,
-        #          content_hash    TEXT,
-        #          metadata        JSONB NOT NULL DEFAULT '{{}}'::jsonb
-        #      );
-        #  """).format(dimension=sql.SQL(str(int(self.emb_dmsion))))
         create_kw_bs_tbl = sql.SQL("""
             CREATE TABLE IF NOT EXISTS knowledge_base (
                 id              BIGSERIAL PRIMARY KEY,
                 session_id      VARCHAR(255) NOT NULL,
                 created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                expires_at      TIMESTAMPTZ,
                 type            VARCHAR(20) NOT NULL,
                 embedding       VECTOR({dimension}),
                 content         TEXT NOT NULL,
+                content_hash    TEXT,
                 metadata        JSONB NOT NULL DEFAULT '{{}}'::jsonb
             );
         """).format(dimension=sql.SQL(str(int(self.emb_dmsion))))
         self.cur.execute(create_kw_bs_tbl)
+
+        # HNSW index - must match the distance operator used in queries
+        self.cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_kw_bs_embedding
+            ON knowledge_base USING hnsw (embedding vector_cosine_ops);
+        """)
+
+        # Supporting indexes
+        self.cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_kw_bs_session_type
+            ON knowledge_base (session_id, type);
+        """)
+        self.cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_kw_bs_expires
+            ON knowledge_base (expires_at) WHERE expires_at IS NOT NULL;
+        """)
+
         self.conn.commit()
 
     # ================================================
@@ -93,7 +100,7 @@ class KnowledgeBase:
             return f"Error: {e}", []
 
     # ================================================
-    # FROM DOCUMENTS
+    # TO DOCUMENTS
     # ================================================
 
     def embed_txt_and_add_doc_to_kw_bs(self, path: Path, cont: str) -> str:
@@ -122,6 +129,10 @@ class KnowledgeBase:
 
         name, mime, size = doc_data
         return self.attchmnts.add_document_to_kw_bs(name, embeddings, cont, mime, size)
+
+    # ================================================
+    # LIST CONTENTS
+    # ================================================
 
     def list_all_uploaded_documents(self) -> str:
         """Return a list of all document(s) in the database."""

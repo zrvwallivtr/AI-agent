@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from src.agent.chat_logs import ChatLogs
+from src.agent.embedding import Embedding
 from src.tools.parsers import Parsers
 from src import config
 from src.logger import get_logger
@@ -34,6 +35,8 @@ class Document:
 
         self.chat_logs  = ChatLogs(sess_name=self.sess_name)
         self.parsers    = Parsers()
+        self.attchmnts  = Document(sess_name=self.sess_name)
+        self.embedding  = Embedding()
 
         self.doc_metadata   = self._get_all_documents_metadata()
         self.doc_names      = self._get_all_documents_names()
@@ -91,6 +94,34 @@ class Document:
         except Exception as e:
             self.conn.rollback()
             return f"Database insert error: {e}"
+
+    def embed_txt_and_add_doc_to_kw_bs(self, path: Path, cont: str) -> str:
+        """Embed text document(s) and upload to knowledge base."""
+        doc_data = self.attchmnts.get_document_metadata_from_path(path)
+        if not doc_data:
+            return f"Error reading '{path}': Path does not exist"
+
+        cont, embeddings = self.embedding._embedding_content(cont)
+        if not embeddings:
+            return "Failed to generate vector embedding: Failed to save entry"
+
+        name, mime, size = doc_data
+        return self.attchmnts.add_document_to_kw_bs(name, embeddings, cont, mime, size)
+
+    def embed_and_add_doc_to_kw_bs(self, path: Path) -> str:
+        """Embed document(s) and upload to knowledge base."""
+        doc_data = self.attchmnts.get_document_metadata_from_path(path)
+        if not doc_data:
+            return f"Error reading '{path}': Path does not exist"
+
+        cont = self.parsers.read_document(path)
+        cont, embeddings = self.embedding._embedding_content(cont)
+        if not embeddings:
+            return "Failed to generate vector embedding: Failed to save entry"
+
+        name, mime, size = doc_data
+        return self.attchmnts.add_document_to_kw_bs(name, embeddings, cont, mime, size)
+
 
     # ================================================
     # FROM DOCUMENTS IN KNOWLEDGE BASE
