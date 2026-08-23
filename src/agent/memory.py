@@ -176,7 +176,7 @@ class Memory:
             mem_dict[str(row[0])] = str(row[1])
         return mem_dict
 
-    def query_similar_content(self, qry: str) -> list[dict[str, Any]] | str:
+    def query_similar_content(self, qry: str) -> list[dict[str, Any]] | None:
         """Queries database for similar content."""
         mem_dict = {}
 
@@ -196,7 +196,7 @@ class Memory:
                 "content": row[0],
                 "similarity": float(row[1])
             } for row in rows
-        ] if rows else "Error: No memory entry found"
+        ] if rows else None
 
     # ============================================================
     # EXTRACT MEMORY
@@ -302,7 +302,7 @@ class Memory:
         self,
         is_auto_mem_rtve: bool,
         prompt: str
-    ) -> list[dict[str, Any]] | str | None:
+    ) -> list[dict[str, Any]] | None:
         """Auto memory entry ability, returns memory entries if its toggled on."""
         if is_auto_mem_rtve == True:
             return self.query_similar_content(prompt)

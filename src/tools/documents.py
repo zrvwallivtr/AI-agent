@@ -133,21 +133,21 @@ class Document:
         self,
         is_attchmnt: bool,
         doc_paths: list[Path] | None
-    ) -> dict[Path, str]:
+    ) -> dict[Path, str] | None:
         """Return Attachment(s) contents"""
         if not is_attchmnt:
-            return {}
+            return
 
         if not doc_paths:
             logger.error("Unable to add extra context: No path(s) provided")
-            return {}
+            return
 
         attchmnt_dict = {}
         for path in doc_paths:
             cont = self.parsers.read_document(path)
             if not cont:
                 logger.error("Extraction failed: Skipping")
-                return {}
+                return
             logger.info("Extracted attachment(s) content")
             attchmnt_dict[path] = cont
         return attchmnt_dict

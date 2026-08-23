@@ -206,13 +206,11 @@ class Agent:
         mem_list = self.mem.toggle_auto_retrive_memory_entries(
             is_auto_mem_rtve=is_auto_mem_rtve, prompt=prompt
         )
-        mem_sect = fmt_cont.memory_section(mem_list) if isinstance(mem_list, list) and mem_list else ""
 
         # Attachments (manual call by user)
         attchmnt_dict = self.doc.get_attachments_content(
             is_attchmnt=is_attchmnt, doc_paths=paths
         )
-        attchmnt_sect = fmt_cont.attachment_section(attchmnt_dict) if attchmnt_dict else ""
 
         # Auto read knowledge base
         # - Could add user specify retrieve list no. during session, if not specified use default.
@@ -246,10 +244,7 @@ class Agent:
         #     f"---\n\n"
         # )
 
-        # User prompt
-        prompt_sect = fmt_cont.user_prompt_section(prompt)
-
-        cmbind_prompt = mem_sect + attchmnt_sect + prompt_sect
+        cmbind_prompt = fmt_cont.build_prompt(mem_list, attchmnt_dict, prompt)
         msgs.append({"role": "user", "content": cmbind_prompt})
 
         # == MODEL ANSWER ======================================

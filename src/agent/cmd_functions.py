@@ -62,12 +62,8 @@ class Command:
         attchmnt_dict = self.doc.get_attachments_content(
             is_attchmnt=is_attchmnt, doc_paths=paths
         )
-        attach_sect = fmt_cont.attachment_section(attchmnt_dict) if attchmnt_dict else ""
 
-        # User prompt
-        prompt_sect = fmt_cont.user_prompt_section(prompt)
-
-        cmbind_prompt = attach_sect + prompt_sect
+        cmbind_prompt = fmt_cont.build_prompt(prompt=prompt, attchmnt_dict=attchmnt_dict)
         messages.append({"role": "user", "content": cmbind_prompt})
 
         # == EXTRACT AND STORE MEMORY(S) ===========================
@@ -128,31 +124,23 @@ class Command:
 
         # Retrieve memory(s)
         mem_list = self.mem.query_similar_content(prompt)
-        mem_sect = fmt_cont.memory_section(mem_list) if isinstance(mem_list, list) and mem_list else ""
-        mem_sect = "# Retrieved memory(s)\n\n".join(
-            f"## Memory\n"
-            f"Content: {item['content']}\n"
-            f"Similarity score: {item['similarity']}\n"
-            for item in mem_list
-        ).join("---\n\n") if isinstance(mem_list, list) and mem_list else ""
 
         # Attachments (manual call by user)
         attchmnt_dict = self.doc.get_attachments_content(
             is_attchmnt=is_attchmnt, doc_paths=paths
         )
-        attach_sect = fmt_cont.attachment_section(attchmnt_dict) if attchmnt_dict else ""
 
-        # User prompt
-        prompt_sect = fmt_cont.user_prompt_section(prompt)
+        cmbind_prompt = fmt_cont.build_prompt(
+            prompt=prompt, mem_list=mem_list, attchmnt_dict=attchmnt_dict
+        )
 
         # == MODEL ANSWER ==========================================
 
         # Model interpret recalled memory(s)
-        cmbind_prompt = mem_sect + attach_sect + prompt_sect
         answer, p_tkns, o_tkns = LLM.response_memory_recall_format(
             model=self.mem.model,
             system_prompt=config.MEM_RECALL_INTERPRET_PROMPT,
-            prompt=prompt,
+            prompt=cmbind_prompt,
             context=messages
         )
 

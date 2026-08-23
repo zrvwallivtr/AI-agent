@@ -50,15 +50,27 @@ class KnowledgeBase:
             CREATE EXTENSION IF NOT EXISTS VECTOR;
             """
         )
+        #  create_kw_bs_tbl = sql.SQL("""
+        #      CREATE TABLE IF NOT EXISTS knowledge_base (
+        #          id              BIGSERIAL PRIMARY KEY,
+        #          session_id      VARCHAR(255) NOT NULL,
+        #          created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        #          type            VARCHAR(20) NOT NULL,
+        #          embedding       VECTOR({dimension}),
+        #          content         TEXT NOT NULL,
+        #          content_hash    TEXT,
+        #          metadata        JSONB NOT NULL DEFAULT '{{}}'::jsonb
+        #      );
+        #  """).format(dimension=sql.SQL(str(int(self.emb_dmsion))))
         create_kw_bs_tbl = sql.SQL("""
             CREATE TABLE IF NOT EXISTS knowledge_base (
-                id BIGSERIAL PRIMARY KEY,
-                session_id VARCHAR(255) NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                type VARCHAR(20) NOT NULL,
-                embedding VECTOR({dimension}),
-                content TEXT NOT NULL,
-                metadata JSONB DEFAULT '{{}}'::jsonb
+                id              BIGSERIAL PRIMARY KEY,
+                session_id      VARCHAR(255) NOT NULL,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                type            VARCHAR(20) NOT NULL,
+                embedding       VECTOR({dimension}),
+                content         TEXT NOT NULL,
+                metadata        JSONB NOT NULL DEFAULT '{{}}'::jsonb
             );
         """).format(dimension=sql.SQL(str(int(self.emb_dmsion))))
         self.cur.execute(create_kw_bs_tbl)
