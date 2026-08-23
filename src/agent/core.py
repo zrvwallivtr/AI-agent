@@ -1,4 +1,5 @@
 from operator import is_
+from agent import format_context
 import ollama
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
 from src.agent.cmd_functions import Command
+from src.agent import format_context as fmt_cont
 #from src.tools.search import is_connected, SearchAgent
 from src.tools.documents import Document
 from src.tools.knowledge_base import KnowledgeBase
@@ -204,23 +206,13 @@ class Agent:
         mem_list = self.mem.toggle_auto_retrive_memory_entries(
             is_auto_mem_rtve=is_auto_mem_rtve, prompt=prompt
         )
-        mem_sect = "# Retrieved memory(s)\n\n".join(
-            f"## Memory\n"
-            f"Content: {item['content']}\n"
-            f"Similarity score: {item['similarity']}\n"
-            for item in mem_list
-        ).join("---\n\n") if isinstance(mem_list, list) and mem_list else ""
+        mem_sect = fmt_cont.memory_section(mem_list) if isinstance(mem_list, list) and mem_list else ""
 
         # Attachments (manual call by user)
         attchmnt_dict = self.doc.get_attachments_content(
             is_attchmnt=is_attchmnt, doc_paths=paths
         )
-        attach_sect = "# Attachment(s)\n\n".join(
-            f"## Document name: {doc_name}\n"
-            f"Content:\n"
-            f"{content}\n\n"
-            for doc_name, content in attchmnt_dict.items()
-        ).join("---\n\n") if attchmnt_dict else ""
+        attchmnt_sect = fmt_cont.attachment_section(attchmnt_dict) if attchmnt_dict else ""
 
         # Auto read knowledge base
         # - Could add user specify retrieve list no. during session, if not specified use default.
@@ -255,12 +247,9 @@ class Agent:
         # )
 
         # User prompt
-        prompt_sect = (
-            f"# User prompt\n\n"
-            f"{prompt}"
-        )
+        prompt_sect = fmt_cont.user_prompt_section(prompt)
 
-        cmbind_prompt = mem_sect + attach_sect + prompt_sect
+        cmbind_prompt = mem_sect + attchmnt_sect + prompt_sect
         msgs.append({"role": "user", "content": cmbind_prompt})
 
         # == MODEL ANSWER ======================================
@@ -287,9 +276,9 @@ class Agent:
 
         # == STORE ATTACHMENT(S) ===============================
 
-        if paths:
-            for path in paths:
-                notify = self.kw_bs.embed_and_add_doc_to_kw_bs(path)
+        if attchmnt_dict:
+            for doc_path, cont in attchmnt_dict.items():
+                notify = self.kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
                 print(notify)
         return
         # // END HERE //

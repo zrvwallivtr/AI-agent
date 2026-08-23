@@ -29,7 +29,7 @@ class Parsers:
         # Map formats to their parsing methods
         self.formats = {
             # Plain text
-            ".txt": self._read_txt,
+            ".txt": self.read_txt,
 
             # Data & configuration formats
             ".csv": self._docling_read_csv if config.DOCLING_DEFAULT else self._read_csv,
@@ -61,26 +61,12 @@ class Parsers:
         self.converter = DocumentConverter()
 
     # =======================================================
-    # Plain text
-    # =======================================================
-
-    def _read_txt(self, path: Path, file_type: str = "txt") -> str:
-        """Reads plain text files using UTF-8 validation."""
-        try:
-            content = path.read_text(encoding="utf-8", errors="ignore")
-            logger.info("Extracted '%s' file content as plain text: path='%s'", file_type, path)
-            return content
-        except Exception as e:
-            logger.error(f"Failed to read '%s' file: path='%s', error=%s", file_type, path, e)
-            return f"Failed to extract file content"
-
-    # =======================================================
     # Data & configuration formats
     # =======================================================
 
     def _read_csv(self, path: Path) -> str:
         """Reads csv as plain text files."""
-        return self._read_txt(path, "csv")
+        return self.read_txt(path, "csv")
 
     def _docling_read_csv(self, path: Path) -> str:
         """Convert csv to markdown via docling."""
@@ -113,16 +99,16 @@ class Parsers:
             return f"Failed to extract file content"
 
     def _read_yaml(self, path: Path) -> str:
-        return self._read_txt(path, "yaml")
+        return self.read_txt(path, "yaml")
 
     def _read_yml(self, path: Path) -> str:
-        return self._read_txt(path, "yml")
+        return self.read_txt(path, "yml")
 
     def _read_toml(self, path: Path) -> str:
-        return self._read_txt(path, "toml")
+        return self.read_txt(path, "toml")
 
     def _read_xml(self, path: Path) -> str:
-        return self._read_txt(path, "xml")
+        return self.read_txt(path, "xml")
 
     # =======================================================
     # Text documents
@@ -210,16 +196,36 @@ class Parsers:
     def _read_code(self, path: Path) -> str:
         """Reads code files and wraps them in markdown code fences."""
         lang    = path.suffix.lstrip(".")
-        content = self._read_txt(path, f"{lang}")
+        content = self.read_txt(path, f"{lang}")
 
         return f"```{lang}\n{content}\n```"
 
     # =======================================================
-    # CONNECT TO CORRECT PARSER
+    # Plain text
     # =======================================================
 
-    def _read_file(self, path) -> str:
-        """Return content in file path."""
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read()
-        return content
+    def read_txt(self, path: Path, file_type: str = "txt") -> str:
+        """Reads plain text files using UTF-8 validation."""
+        try:
+            cont = path.read_text(encoding="utf-8", errors="ignore")
+            clean_cont = "".join(c for c in cont if c.isprintable() or c in "\n\r\t")
+            logger.info("Extracted '%s' file content as plain text: path='%s'", file_type, path)
+            return clean_cont
+        except Exception as e:
+            logger.error(f"Failed to read '%s' file: path='%s', error=%s", file_type, path, e)
+            return f"Failed to extract file content"
+
+    # =======================================================
+    # READ
+    # =======================================================
+
+    def read_document(self, path: Path) -> str:
+        """Return file content as a string using mapped parsers."""
+        ext = path.suffix.lower()
+
+        if not path.exists():
+            return f"Error: File {path} not found."
+
+        # Route to correct parser, fallback to plain text if unknown
+        parser = self.formats.get(ext, self.read_txt)
+        return parser(path)

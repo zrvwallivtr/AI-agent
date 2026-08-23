@@ -42,7 +42,7 @@ class Document:
     # FILE METADATA
     # ================================================
 
-    def get_document_metadata(self, path: Path) -> tuple[str, str, int] | None:
+    def get_document_metadata_from_path(self, path: Path) -> tuple[str, str, int] | None:
         """Return name, mime type and size bytes from given path."""
         if not path.exists():
             return None
@@ -133,7 +133,7 @@ class Document:
         self,
         is_attchmnt: bool,
         doc_paths: list[Path] | None
-    ) -> dict[str, str]:
+    ) -> dict[Path, str]:
         """Return Attachment(s) contents"""
         if not is_attchmnt:
             return {}
@@ -144,7 +144,7 @@ class Document:
 
         attchmnt_dict = {}
         for path in doc_paths:
-            cont = self.parsers._read_file(path)
+            cont = self.parsers.read_document(path)
             if not cont:
                 logger.error("Extraction failed: Skipping")
                 return {}

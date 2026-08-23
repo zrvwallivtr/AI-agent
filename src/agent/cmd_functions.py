@@ -1,15 +1,17 @@
 from re import search
-import ollama
+from agent import format_context
 from pathlib import Path
 
 from src.agent.llm import LLM
 from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
+from src.agent import format_context as fmt_cont
 from src.tools.documents import Document
 from src.tools.search import is_connected, SearchAgent
 from src import config
 from src.logger import get_logger
+from tools.knowledge_base import KnowledgeBase
 
 
 logger = get_logger(__name__)
@@ -27,6 +29,7 @@ class Command:
         self.project        = project
         self.chat_logs      = ChatLogs(sess_name=self.sess_name)
         self.mem            = Memory(project=self.project)
+        self.kw_bs          = KnowledgeBase(sess_name=self.sess_name)
         self.doc            = Document(sess_name=self.sess_name)
         # self.search_agent   = SearchAgent()
 
@@ -39,7 +42,7 @@ class Command:
         prompt: str,
         is_attchmnt: bool,
         paths: list[Path] | None = None
-    ) -> str:
+    ) -> str | None:
         """
         Extract key info from user prompt and attachments (optional),
         save extracted memory entries to database.
@@ -53,25 +56,21 @@ class Command:
 
         messages = self.chat_logs.get_entire_conv()
 
+        # == FULL CONTEXT ==========================================
+
         # Attachments (manual call by user)
         attchmnt_dict = self.doc.get_attachments_content(
             is_attchmnt=is_attchmnt, doc_paths=paths
         )
-        attach_sect = "# Attachment(s)\n\n".join(
-            f"## Document name: {doc_name}\n"
-            f"Content:\n"
-            f"{content}\n\n"
-            for doc_name, content in attchmnt_dict.items()
-        ).join("---\n\n") if attchmnt_dict else ""
+        attach_sect = fmt_cont.attachment_section(attchmnt_dict) if attchmnt_dict else ""
 
         # User prompt
-        prompt_sect = (
-            f"# User prompt\n\n"
-            f"{prompt}"
-        )
+        prompt_sect = fmt_cont.user_prompt_section(prompt)
 
         cmbind_prompt = attach_sect + prompt_sect
         messages.append({"role": "user", "content": cmbind_prompt})
+
+        # == EXTRACT AND STORE MEMORY(S) ===========================
 
         print(f"Extracting content from user's input...")
         created_ids, p_tkns, o_tkns = self.mem.extract_and_store_mem_from_conv(
@@ -103,7 +102,14 @@ class Command:
             p_tkns=p_tkns,
             o_tkns=o_tkns
         )
-        return "Memory saved to database"
+
+        # == STORE ATTACHMENT(S) ===================================
+
+        if attchmnt_dict:
+            for doc_path, cont in attchmnt_dict.items():
+                notify = self.kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
+                print(notify)
+        return
 
     def cmd_recall(
         self,
@@ -118,8 +124,11 @@ class Command:
 
         messages = self.chat_logs.get_entire_conv()
 
+        # == FULL CONTEXT ==========================================
+
         # Retrieve memory(s)
         mem_list = self.mem.query_similar_content(prompt)
+        mem_sect = fmt_cont.memory_section(mem_list) if isinstance(mem_list, list) and mem_list else ""
         mem_sect = "# Retrieved memory(s)\n\n".join(
             f"## Memory\n"
             f"Content: {item['content']}\n"
@@ -131,18 +140,12 @@ class Command:
         attchmnt_dict = self.doc.get_attachments_content(
             is_attchmnt=is_attchmnt, doc_paths=paths
         )
-        attach_sect = "# Attachment(s)\n\n".join(
-            f"## Document name: {doc_name}\n"
-            f"Content:\n"
-            f"{content}\n\n"
-            for doc_name, content in attchmnt_dict.items()
-        ).join("---\n\n") if attchmnt_dict else ""
+        attach_sect = fmt_cont.attachment_section(attchmnt_dict) if attchmnt_dict else ""
 
         # User prompt
-        prompt_sect = (
-            f"# User prompt\n\n"
-            f"{prompt}"
-        )
+        prompt_sect = fmt_cont.user_prompt_section(prompt)
+
+        # == MODEL ANSWER ==========================================
 
         # Model interpret recalled memory(s)
         cmbind_prompt = mem_sect + attach_sect + prompt_sect
@@ -162,6 +165,13 @@ class Command:
             p_tkns=p_tkns,
             o_tkns=o_tkns
         )
+
+        # == STORE ATTACHMENT(S) ===================================
+
+        if attchmnt_dict:
+            for doc_path, cont in attchmnt_dict.items():
+                notify = self.kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
+                print(notify)
         return
 
     # ========================================================

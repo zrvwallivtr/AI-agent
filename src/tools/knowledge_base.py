@@ -81,16 +81,29 @@ class KnowledgeBase:
             return f"Error: {e}", []
 
     # ================================================
-    # DOCUMENTS
+    # FROM DOCUMENTS
     # ================================================
 
-    def embed_and_add_doc_to_kw_bs(self, path: Path) -> str:
-        """Embed document(s) and upload to knowledge base."""
-        doc_data = self.attchmnts.get_document_metadata(path)
+    def embed_txt_and_add_doc_to_kw_bs(self, path: Path, cont: str) -> str:
+        """Embed text document(s) and upload to knowledge base."""
+        doc_data = self.attchmnts.get_document_metadata_from_path(path)
         if not doc_data:
             return f"Error reading '{path}': Path does not exist"
 
-        cont = self.parsers._read_file(path)
+        cont, embeddings = self._embedding_content(cont)
+        if not embeddings:
+            return "Failed to generate vector embedding: Failed to save entry"
+
+        name, mime, size = doc_data
+        return self.attchmnts.add_document_to_kw_bs(name, embeddings, cont, mime, size)
+
+    def embed_and_add_doc_to_kw_bs(self, path: Path) -> str:
+        """Embed document(s) and upload to knowledge base."""
+        doc_data = self.attchmnts.get_document_metadata_from_path(path)
+        if not doc_data:
+            return f"Error reading '{path}': Path does not exist"
+
+        cont = self.parsers.read_document(path)
         cont, embeddings = self._embedding_content(cont)
         if not embeddings:
             return "Failed to generate vector embedding: Failed to save entry"
