@@ -9,9 +9,7 @@ from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
 from src.agent.cmd_functions import Command
 from src.agent import format_context as fmt_cont
-#from src.tools.search import is_connected, SearchAgent
-from src.tools.document_knowledge_base import DocumentKnowledgeBase
-from src.tools.knowledge_base import KnowledgeBase
+from src.tools import KnowledgeBase, DocumentKnowledgeBase
 from src.logger import get_logger
 from src import config
 

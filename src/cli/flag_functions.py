@@ -6,7 +6,7 @@ from pathlib import Path
 from src import config
 from src.agent.chat_logs import ChatLogs
 from src.agent.core import Agent
-from src.tools.knowledge_base import KnowledgeBase
+from src.tools import KnowledgeBase
 
 
 conn = psycopg2.connect(

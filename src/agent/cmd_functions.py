@@ -7,11 +7,9 @@ from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
 from src.agent import format_context as fmt_cont
-from src.tools.document_knowledge_base import DocumentKnowledgeBase
-# from src.tools.search import is_connected, SearchAgent
+from src.tools import KnowledgeBase, DocumentKnowledgeBase
 from src import config
 from src.logger import get_logger
-from tools.knowledge_base import KnowledgeBase
 
 
 log = get_logger(__name__)

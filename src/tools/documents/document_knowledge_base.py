@@ -10,7 +10,8 @@ from datetime import datetime, timedelta, timezone
 
 from src.agent.chat_logs import ChatLogs
 from src.agent.models.embed import Embed
-from src.tools.parsers import Parsers
+from src.tools.documents.basic_parsers import BasicParsers
+from src.tools.documents.document_reader import DocumentReader
 from src import config
 from src.logger import get_logger
 
@@ -36,7 +37,7 @@ class DocumentKnowledgeBase:
         self.qry_limit  = config.RETRIEVE_MEM_ENTRY_LIMIT
 
         self.chat_logs  = ChatLogs(sess_name=self.sess_name)
-        self.parsers    = Parsers()
+        self.doc_reader = DocumentReader()
         self.embed      = Embed()
 
         self.doc_metadata   = self._get_all_documents_metadata()
@@ -114,7 +115,7 @@ class DocumentKnowledgeBase:
         attchmnt_dict = {}
         for path in attch_paths:
 
-            cont = self.parsers.read_document(path)
+            cont = self.doc_reader.read_document(path)
             if not cont:
                 log.warning("Failed to extract content from '%s'. Skipping", path.name)
                 return
@@ -221,7 +222,7 @@ class DocumentKnowledgeBase:
             return f"Error reading '{path}': Path does not exist"
 
         # Read with correct parsers
-        cont = self.parsers.read_document(path)
+        cont = self.doc_reader.read_document(path)
 
         # Hash raw content before embedding and check duplicates
         cont_hash = self._hash_content(cont)

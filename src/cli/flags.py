@@ -5,9 +5,7 @@ from src.agent.core import Agent
 from src.agent.memory import Memory
 from src import config
 
-from src.tools.document_knowledge_base import DocumentKnowledgeBase
-# from src.tools.project_manager import ProjectManager
-# from src.tools.search import SearchAgent
+from src.tools import DocumentKnowledgeBase
 
 from src.cli.flag_functions import General, Session, File
 

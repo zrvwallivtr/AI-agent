@@ -34,17 +34,15 @@ def _validate_path(path: Path) -> Path:
     return resolved
 
 
-class Parsers:
-    def __init__(
-        self,
-    ):
+class BasicParsers:
+    def __init__(self):
         # Map formats to their parsing methods
         self.formats = {
             # Plain text
             ".txt": self.read_txt,
 
             # Data & configuration formats
-            ".csv": self._docling_read_csv if config.DOCLING_DEFAULT else self._read_csv,
+            ".csv": self._read_csv,
             ".xlsx": self._read_xlsx,
             ".yaml": self._read_yaml,
             ".yml": self._read_yml,
@@ -52,9 +50,9 @@ class Parsers:
             ".xml": self._read_xml,
             
             # Text documents
-            ".pdf": self._docling_read_pdf if config.DOCLING_DEFAULT else self._read_pdf,
+            ".pdf": self._read_pdf,
             ".docx": self._read_docx,
-            ".epub": self._docling_read_epub if config.DOCLING_DEFAULT else self._read_epub,
+            ".epub": self._read_epub,
             
             # Programming
             ".py": self._read_code,
@@ -73,20 +71,12 @@ class Parsers:
         self.converter = DocumentConverter()
 
     # =======================================================
-    # Data & configuration formats
+    # DATA & CONFIGURATION FORMATS
     # =======================================================
 
     def _read_csv(self, path: Path) -> str:
         """Reads csv as plain text files."""
         return self.read_txt(path, "csv")
-
-
-    def _docling_read_csv(self, path: Path) -> str:
-        """Convert csv to markdown via docling."""
-        log.info(f"Converting CSV file: {path}")
-        print(f"Converting CSV file: {path}")
-        result = self.converter.convert(path)
-        return result.document.export_to_markdown()
 
 
     def _read_xlsx(self, path: Path) -> str:
@@ -147,14 +137,6 @@ class Parsers:
             return f"Failed to extract file content"
 
 
-    def _docling_read_pdf(self, path: Path) -> str:
-        """Convert pdf to markdown via docling."""
-        log.info(f"Converting PDF file: {path}")
-        print(f"Converting PDF file: {path}")
-        result = self.converter.convert(path)
-        return result.document.export_to_markdown()
-    
-
     def _read_docx(self, path: Path) -> str:
         """Extracts structural text elements line by line from document."""
         try:
@@ -203,14 +185,6 @@ class Parsers:
         except Exception as e:
             log.error("Failed to read EPUB file: path='%s', error=%s", path, e)
             return f"Failed to extract file content"
-
-
-    def _docling_read_epub(self, path: Path) -> str:
-        """Convert EPUB to markdown via docling."""
-        log.info(f"Converting EPUB file: {path}")
-        print(f"Converting EPUB file: {path}")
-        result = self.converter.convert(path)
-        return result.document.export_to_markdown()
 
 
     # =======================================================

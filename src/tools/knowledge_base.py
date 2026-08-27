@@ -9,9 +9,8 @@ from typing import Any, Literal
 
 from src.agent.chat_logs import ChatLogs
 from src.agent.models.embed import Embed
-from src.tools.parsers import Parsers
 from src.models_database import EMB_MODEL_DIMENSION
-from src.tools.document_knowledge_base import DocumentKnowledgeBase
+from src.tools.documents.document_knowledge_base import DocumentKnowledgeBase
 from src import config
 from src.logger import get_logger
 
@@ -39,7 +38,6 @@ class KnowledgeBase:
         self.sess_id    = self.chat_logs.sess_id
         self.embed      = Embed()
         self.emb_dim    = self.embed.emb_dim
-        self.parsers    = Parsers()
         self.doc_kw_bs  = DocumentKnowledgeBase(sess_name=self.sess_name)
 
         self._init_kw_bs()
