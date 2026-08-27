@@ -3,12 +3,8 @@ import logging
 import logging.config
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from src import config
+from src.config.files_and_directories import LOG_FILE
 
-
-LOG_DIR = config.APP_DIR / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-LOG_FILE = LOG_DIR / "agent.log"
 
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 

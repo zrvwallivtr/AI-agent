@@ -5,7 +5,8 @@ import uuid
 from pathlib import Path
 from typing import Literal, Any
 
-from src import config
+from src.config.prompts import SYS_PROMPT, COMPRESS_PROMPT
+from src.config.postgres import conn
 from src.logger import get_logger
 
 
@@ -13,18 +14,12 @@ log = get_logger(__name__)
 
 
 class ChatLogs:
-    def __init__(self, sess_name: str | None = None):
-        self.conn = psycopg2.connect(
-            dbname=config.DBNAME,
-            user=config.USER,
-            password=config.PASSWORD,
-            host=config.HOST,
-            port=config.PORT
-        )
+    def __init__(self, conn, sess_name: str | None = None):
+        self.conn = conn
         self.cur = self.conn.cursor()
 
-        self.sys_prompt     = config.SYS_PROMPT
-        self.cmp_prompt   = config.COMPRESS_PROMPT
+        self.sys_prompt = SYS_PROMPT
+        self.cmp_prompt = COMPRESS_PROMPT
 
         self.sess_name      = sess_name.strip() if sess_name else "default_session"
 
@@ -60,13 +55,15 @@ class ChatLogs:
         self.cur.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_logs (
-                id          BIGSERIAL PRIMARY KEY,
-                session_id  UUID NOT NULL REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
-                created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                prompt      TEXT NOT NULL,
-                response    TEXT NOT NULL,
-                state       VARCHAR(20) NOT NULL CHECK (state IN ('external', 'internal')),
-                metadata    JSONB DEFAULT '{}'::jsonb
+                id              BIGSERIAL PRIMARY KEY,
+                session_id      UUID NOT NULL REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                prompt          TEXT NOT NULL,
+                response        TEXT NOT NULL,
+                state           VARCHAR(20) NOT NULL CHECK (state IN ('external', 'internal')),
+                -- prompt_tokens   INTEGER,
+                -- output_tokens   INTEGER,
+                metadata        JSONB DEFAULT '{}'::jsonb
             );
             """
         )

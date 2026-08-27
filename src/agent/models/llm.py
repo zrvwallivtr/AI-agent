@@ -3,8 +3,6 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 
-from src import config
-
 
 console = Console()
 

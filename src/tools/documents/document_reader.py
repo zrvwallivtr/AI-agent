@@ -1,7 +1,8 @@
 from pathlib import Path
 
 
-from src import config
+from src.config.files_and_directories import UPLOAD_DIR
+from src.config.documents import DOCLING_DEFAULT
 from src.tools.documents.basic_parsers import BasicParsers
 from src.tools.documents.docling_parsers import DoclingParsers
 
@@ -21,12 +22,12 @@ class DocumentReader:
         resolved = path.resolve()
 
         try:
-            resolved.relative_to(config.UPLOAD_DIR)
+            resolved.relative_to(UPLOAD_DIR)
 
         except ValueError:
             raise PathTraversalError(
                 f"Path '{path}' resolves to '{resolved}', which is outside "
-                f"the allowed directory '{config.UPLOAD_DIR}'"
+                f"the allowed directory '{UPLOAD_DIR}'"
             )
 
         return resolved
@@ -44,7 +45,7 @@ class DocumentReader:
         # Match with the correct parser
         ext = safe_path.suffix.lower()
 
-        if config.DOCLING_DEFAULT:
+        if DOCLING_DEFAULT:
             parser = self.docling_prsrs.formats.get(ext, self.bs_prsrs.read_txt)
         else:
             parser = self.bs_prsrs.formats.get(ext, self.bs_prsrs.read_txt)

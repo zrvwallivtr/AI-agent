@@ -2,7 +2,6 @@ from pathlib import Path
 from docling.document_converter import DocumentConverter
 
 
-from src import config
 from src.logger import get_logger
 
 

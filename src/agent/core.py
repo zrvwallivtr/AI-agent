@@ -3,6 +3,8 @@ from agent import format_context
 import ollama
 from pathlib import Path
 
+from src.config.models import MODEL, MODEL_MAX_TOKENS
+from src.config.postgres import conn
 from src.agent.models.llm import LLM
 from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
@@ -11,7 +13,6 @@ from src.agent.cmd_functions import Command
 from src.agent import format_context as fmt_cont
 from src.tools import KnowledgeBase, DocumentKnowledgeBase
 from src.logger import get_logger
-from src import config
 
 
 log = get_logger(__name__)
@@ -52,22 +53,32 @@ class Agent:
         sess_name: str | None = None,
         project: str | None = None
     ):
-        model = config.MODEL if model is None else model
+        model = MODEL if model is None else model
         self._validate_model(model)
 
-        if config.MODEL_MAX_TOKENS:
-            self.tokens = Tokens(model, config.MODEL_MAX_TOKENS)
+        if MODEL_MAX_TOKENS:
+            self.tokens = Tokens(model, MODEL_MAX_TOKENS)
         else:
             self.tokens = Tokens(model)
 
+        self.conn       = conn
         self.model      = model
         self.sess_name  = sess_name
         self.project    = project
-        self.chat_logs  = ChatLogs(sess_name=self.sess_name)
-        self.mem        = Memory(project=project)
-        self.kw_bs      = KnowledgeBase(sess_name=self.sess_name)
-        self.cmd        = Command(model=model, sess_name=self.sess_name, project=project)
-        self.doc_kw_bs  = DocumentKnowledgeBase(sess_name=self.sess_name)
+
+        self.chat_logs  = ChatLogs(conn=self.conn, sess_name=self.sess_name)
+        self.mem        = Memory(
+            conn=self.conn, chat_logs=self.chat_logs, project=project
+        )
+        self.kw_bs      = KnowledgeBase(
+            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
+        )
+        self.cmd        = Command(
+            conn=self.conn, chat_logs=self.chat_logs, model=model, sess_name=self.sess_name, project=project
+        )
+        self.doc_kw_bs  = DocumentKnowledgeBase(
+            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
+        )
         # self.search_agent   = SearchAgent()
 
 

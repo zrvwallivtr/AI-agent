@@ -8,11 +8,13 @@ from pathlib import Path
 from typing import Any
 from datetime import datetime, timedelta, timezone
 
+from src.config.memory import RETRIEVE_MEM_ENTRY_LIMIT
+from src.config.files_and_directories import UPLOAD_DIR
+from src.config.postgres import conn
 from src.agent.chat_logs import ChatLogs
 from src.agent.models.embed import Embed
 from src.tools.documents.basic_parsers import BasicParsers
 from src.tools.documents.document_reader import DocumentReader
-from src import config
 from src.logger import get_logger
 
 
@@ -22,21 +24,17 @@ log = get_logger(__name__)
 class DocumentKnowledgeBase:
     def __init__(
         self,
+        conn,
+        chat_logs: ChatLogs,
         sess_name: str | None = None,
     ):
-        self.conn   = psycopg2.connect(
-            dbname=config.DBNAME,
-            user=config.USER,
-            password=config.PASSWORD,
-            host=config.HOST,
-            port=config.PORT
-        )
+        self.conn   = conn
         self.cur    = self.conn.cursor()
 
         self.sess_name = sess_name
-        self.qry_limit  = config.RETRIEVE_MEM_ENTRY_LIMIT
+        self.qry_limit  = RETRIEVE_MEM_ENTRY_LIMIT
 
-        self.chat_logs  = ChatLogs(sess_name=self.sess_name)
+        self.chat_logs  = chat_logs
         self.doc_reader = DocumentReader()
         self.embed      = Embed()
 
@@ -79,7 +77,7 @@ class DocumentKnowledgeBase:
     def get_document_metadata_from_path(self, path: Path) -> tuple[str, str, int] | None:
         """Return name, mime type and size bytes from given path."""
         if not path.exists():
-            log.warning("'%s' does not exists in '%s'", path.name, config.UPLOAD_DIR)
+            log.warning("'%s' does not exists in '%s'", path.name, UPLOAD_DIR)
             return
 
         # Prevent duplicated name in the metadata
@@ -180,7 +178,7 @@ class DocumentKnowledgeBase:
             log.warning(
                 "Failed to read '%s': File does not exists in %s",
                 path.name,
-                config.UPLOAD_DIR
+                UPLOAD_DIR
             )
             return f"Error reading '{path}': Path does not exist"
 
@@ -215,9 +213,7 @@ class DocumentKnowledgeBase:
         doc_data = self.get_document_metadata_from_path(path)
         if not doc_data:
             log.warning(
-                "Failed to read '%s': File does not exists in %s",
-                path.name,
-                config.UPLOAD_DIR
+                "Failed to read '%s': File does not exists in %s", path.name, UPLOAD_DIR
             )
             return f"Error reading '{path}': Path does not exist"
 

@@ -2,13 +2,14 @@ from re import search
 from agent import format_context
 from pathlib import Path
 
+from src.config.prompts import MEM_RECALL_INTERPRET_PROMPT
+from src.config.postgres import conn
 from src.agent.models.llm import LLM
 from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
 from src.agent import format_context as fmt_cont
 from src.tools import KnowledgeBase, DocumentKnowledgeBase
-from src import config
 from src.logger import get_logger
 
 
@@ -18,17 +19,27 @@ log = get_logger(__name__)
 class Command:
     def __init__(
         self,
+        conn,
+        chat_logs: ChatLogs,
         model: str | None = None,
         sess_name: str | None = None,
         project: str | None = None
     ):
+        self.conn       = conn
         self.model      = model
         self.sess_name  = sess_name
         self.project    = project
-        self.chat_logs  = ChatLogs(sess_name=self.sess_name)
-        self.mem        = Memory(project=self.project)
-        self.kw_bs      = KnowledgeBase(sess_name=self.sess_name)
-        self.doc_kw_bs  = DocumentKnowledgeBase(sess_name=self.sess_name)
+        self.chat_logs  = chat_logs
+
+        self.mem        = Memory(
+            conn=self.conn, chat_logs=self.chat_logs, project=self.project
+        )
+        self.kw_bs      = KnowledgeBase(
+            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
+        )
+        self.doc_kw_bs  = DocumentKnowledgeBase(
+            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
+        )
         # self.search_agent   = SearchAgent()
 
 
@@ -149,7 +160,7 @@ class Command:
         # Model interpret recalled memory(s)
         answer, p_tkns, o_tkns = LLM.response_memory_recall_format(
             model=self.mem.model,
-            system_prompt=config.MEM_RECALL_INTERPRET_PROMPT,
+            system_prompt=MEM_RECALL_INTERPRET_PROMPT,
             prompt=cmbind_prompt,
             context=messages
         )

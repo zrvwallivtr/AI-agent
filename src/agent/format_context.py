@@ -75,5 +75,4 @@ def build_prompt(
         attachment_section(attchmnt_dict),
         user_prompt_section(prompt)
     ]
-    print(sections)
     return "\n\n".join(s for s in sections if s)

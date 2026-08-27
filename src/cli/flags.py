@@ -1,12 +1,12 @@
 import argparse
 from pathlib import Path
 
+from src.config.models import MODEL
+from src.config.postgres import conn
+from agent.chat_logs import ChatLogs
 from src.agent.core import Agent
 from src.agent.memory import Memory
-from src import config
-
 from src.tools import DocumentKnowledgeBase
-
 from src.cli.flag_functions import General, Session, File
 
 
@@ -15,7 +15,7 @@ def main():
 
     # General
     parser.add_argument("question",                 nargs="?",              help="Ask questions")
-    parser.add_argument("--model", "-m",            default=config.MODEL,   metavar=("MODEL_NAME"),                     help=f"Select model (defualt: {config.MODEL})")
+    parser.add_argument("--model", "-m",            default=MODEL,   metavar=("MODEL_NAME"),                     help=f"Select model (defualt: {MODEL})")
     parser.add_argument("--reset-default", "-rd",   action="store_true",    help="Reset default session")
     parser.add_argument("--installed-models", "-i", action="store_true",    help="List all installed ollama models")
 
@@ -40,7 +40,8 @@ def main():
     agent       = Agent(model=args.model, sess_name=args.session)
     session     = Session(args.session or args.new_session or args.delete_session)
     file        = File(args.session)
-    doc_kw_bs   = DocumentKnowledgeBase(args.session)
+    chat_logs   = ChatLogs(conn=conn, sess_name=args.session)
+    doc_kw_bs   = DocumentKnowledgeBase(conn=conn, chat_logs=chat_logs, sess_name=args.session)
 
     # =================================================================
     # Delete

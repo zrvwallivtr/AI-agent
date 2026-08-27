@@ -5,9 +5,9 @@ from src.agent.models.llm import LLM
 from src import config
 
 
-def _project_path(project_name):
-    PROJECT_DIR = config.PROJECTS_DIR / project_name
-    return PROJECT_DIR
+# def _project_path(project_name):
+#     PROJECT_DIR = config.PROJECTS_DIR / project_name
+#     return PROJECT_DIR
 
 
 # ----------------------------------------------

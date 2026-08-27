@@ -7,7 +7,7 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 from docling.document_converter import DocumentConverter
 
-from src import config
+from src.config.files_and_directories import UPLOAD_DIR
 from src.logger import get_logger
 
 
@@ -23,12 +23,12 @@ def _validate_path(path: Path) -> Path:
     resolved = path.resolve()
 
     try:
-        resolved.relative_to(config.UPLOAD_DIR)
+        resolved.relative_to(UPLOAD_DIR)
 
     except ValueError:
         raise PathTraversalError(
             f"Path '{path}' resolves to '{resolved}', which is outside "
-            f"the allowed directory '{config.UPLOAD_DIR}'"
+            f"the allowed directory '{UPLOAD_DIR}'"
         )
 
     return resolved

@@ -1,13 +1,13 @@
-from models_database import EMB_MODEL_DIMENSION
 import ollama
 import hashlib
 
-from src import config
+from src.config.models import EMBED_MODEL
+from models_database import EMB_MODEL_DIMENSION
 
 
 class Embed:
     def __init__(self):
-        self.model      = config.EMBED_MODEL
+        self.model      = EMBED_MODEL
         self.emb_dim    = EMB_MODEL_DIMENSION[self.model]
 
     def embedding_content(self, cont: str) -> tuple[str, list[float]]:

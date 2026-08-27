@@ -9,7 +9,10 @@ from pathlib import Path
 from datetime import datetime
 from typing import Literal, Any, get_args
 
-from src import config
+from src.config.models import MODEL
+from src.config.prompts import MEM_PROMPT, MEM_MANUAL_PROMPT
+from src.config.memory import RETRIEVE_MEM_ENTRY_LIMIT, AUTO_MEMORY_STORE_TOKENS
+from src.config.postgres import conn
 from src.agent.chat_logs import ChatLogs
 from src.agent.models.embed import Embed
 from src.agent.models.llm import LLM
@@ -29,29 +32,24 @@ CATEGORIES = list(get_args(CATEGORY_TYPES))
 class Memory:
     def __init__(
         self,
+        conn,
+        chat_logs: ChatLogs,
         sess_name: str | None = None,
         project: str | None = None
     ):
-        self.conn   = psycopg2.connect(
-            dbname=config.DBNAME,
-            user=config.USER,
-            password=config.PASSWORD,
-            host=config.HOST,
-            port=config.PORT
-        )
-        self.cur    = self.conn.cursor()
-
+        self.conn               = conn
+        self.cur                = self.conn.cursor()
         self.sess_name          = sess_name
         self.project            = project
-        self.model              = config.MODEL
-        self.mem_prompt         = config.MEM_PROMPT
-        self.mem_manual_prompt  = config.MEM_MANUAL_PROMPT
-        self.qry_limit          = config.RETRIEVE_MEM_ENTRY_LIMIT
+        self.model              = MODEL
+        self.mem_prompt         = MEM_PROMPT
+        self.mem_manual_prompt  = MEM_MANUAL_PROMPT
+        self.qry_limit          = RETRIEVE_MEM_ENTRY_LIMIT
+        self.chat_logs          = chat_logs
 
-        self.chat_logs      = ChatLogs(sess_name=self.sess_name)
-        self.embed          = Embed()
-        self.emb_dim        = self.embed.emb_dim
-        self.model_tkns     = Tokens(self.model)
+        self.embed      = Embed()
+        self.emb_dim    = self.embed.emb_dim
+        self.model_tkns = Tokens(self.model)
 
         self._init_memory_db()
 
@@ -393,7 +391,7 @@ class Memory:
         if enable_auto_memory_store == False:
             return
 
-        if model_max_tokens < config.AUTO_MEMORY_STORE_TOKENS:
+        if model_max_tokens < AUTO_MEMORY_STORE_TOKENS:
             return
 
         response = self.extract_and_store_mem_from_conv(extraction= "auto")

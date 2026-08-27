@@ -1,5 +1,4 @@
 from logging import debug
-import psycopg2
 import ollama
 import json
 import mimetypes
@@ -7,11 +6,11 @@ from psycopg2 import sql
 from pathlib import Path
 from typing import Any, Literal
 
+from src.config.postgres import conn
 from src.agent.chat_logs import ChatLogs
 from src.agent.models.embed import Embed
 from src.models_database import EMB_MODEL_DIMENSION
 from src.tools.documents.document_knowledge_base import DocumentKnowledgeBase
-from src import config
 from src.logger import get_logger
 
 
@@ -21,24 +20,23 @@ log = get_logger(__name__)
 class KnowledgeBase:
     def __init__(
         self,
+        conn,
+        chat_logs = ChatLogs,
         sess_name: str | None = None,
     ):
-        self.conn   = psycopg2.connect(
-            dbname=config.DBNAME,
-            user=config.USER,
-            password=config.PASSWORD,
-            host=config.HOST,
-            port=config.PORT
-        )
+        self.conn   = conn
         self.cur    = self.conn.cursor()
 
         self.sess_name  = sess_name
 
-        self.chat_logs  = ChatLogs(sess_name=self.sess_name)
+        self.chat_logs  = chat_logs
         self.sess_id    = self.chat_logs.sess_id
         self.embed      = Embed()
         self.emb_dim    = self.embed.emb_dim
-        self.doc_kw_bs  = DocumentKnowledgeBase(sess_name=self.sess_name)
+
+        self.doc_kw_bs  = DocumentKnowledgeBase(
+            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
+        )
 
         self._init_kw_bs()
         self.doc_names = self.doc_kw_bs.doc_names

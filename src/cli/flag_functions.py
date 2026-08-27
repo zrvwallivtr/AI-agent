@@ -3,19 +3,12 @@ import ollama
 from typing_extensions import Doc
 from pathlib import Path
 
-from src import config
+from src.config.postgres import conn
 from src.agent.chat_logs import ChatLogs
 from src.agent.core import Agent
 from src.tools import KnowledgeBase
 
 
-conn = psycopg2.connect(
-    dbname=config.DBNAME,
-    user=config.USER,
-    password=config.PASSWORD,
-    host=config.HOST,
-    port=config.PORT
-)
 cur = conn.cursor()
 
 
@@ -24,8 +17,8 @@ def _del_sess(sess_name: str | None = None) -> str:
     Delete session related chat logs and database contents. If 'session'
     is not specified, delete default session related contents.
     """
-    chat_logs   = ChatLogs(sess_name=sess_name)
-    kw_bs       = KnowledgeBase(sess_name=sess_name)
+    chat_logs   = ChatLogs(conn=conn, sess_name=sess_name)
+    kw_bs       = KnowledgeBase(conn=conn, chat_logs=chat_logs, sess_name=sess_name)
 
     sess_id = chat_logs.get_sess_id()
     if not sess_id:
@@ -121,7 +114,7 @@ class Session:
         prompt: str | None = None
     ) -> str | None:
         """Create session and response to user question."""
-        self.chat_logs  = ChatLogs(sess_name=self.sess_name)
+        self.chat_logs = ChatLogs(conn=conn, sess_name=self.sess_name)
 
         if not prompt:
             return f"New session created: session={self.sess_name}"
@@ -136,7 +129,7 @@ class Session:
 
     def list_session(self):
         """List all user created sessions, do not display session's chat history."""
-        self.chat_logs  = ChatLogs()
+        self.chat_logs = ChatLogs(conn=conn, sess_name=self.sess_name)
         sess_dict = self.chat_logs.get_all_existing_sess_metadata()
 
         print("AVAILABLE SESSION(S)")
