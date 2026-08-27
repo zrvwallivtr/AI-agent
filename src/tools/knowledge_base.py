@@ -31,26 +31,29 @@ class KnowledgeBase:
         )
         self.cur    = self.conn.cursor()
 
-        self.sess_name          = sess_name
-        self.emb_model          = config.EMBED_MODEL
-        self.emb_dmsion         = EMB_MODEL_DIMENSION[self.emb_model]
-        self.qry_limit          = config.RETRIEVE_MEM_ENTRY_LIMIT
+        self.sess_name  = sess_name
+        self.emb_model  = config.EMBED_MODEL
+        self.emb_dmsion = EMB_MODEL_DIMENSION[self.emb_model]
+        self.qry_limit  = config.RETRIEVE_MEM_ENTRY_LIMIT
 
-        self.chat_logs          = ChatLogs(sess_name=self.sess_name)
-        self.parsers            = Parsers()
-        self.attchmnts          = Document(sess_name=self.sess_name)
+        self.chat_logs  = ChatLogs(sess_name=self.sess_name)
+        self.sess_id    = self.chat_logs.sess_id
+        self.parsers    = Parsers()
+        self.attchmnts  = Document(sess_name=self.sess_name)
 
         self._init_doc_db()
-        self.doc_names          = self.attchmnts.doc_names
+        self.doc_names = self.attchmnts.doc_names
 
     def _init_doc_db(self):
-        """Create document table if missing."""
+        """Create knowledge base table if missing."""
         self.cur.execute(
             """
             CREATE EXTENSION IF NOT EXISTS VECTOR;
             """
         )
-        create_kw_bs_tbl = sql.SQL("""
+
+        create_kw_bs_tbl = sql.SQL(
+            """
             CREATE TABLE IF NOT EXISTS knowledge_base (
                 id              BIGSERIAL PRIMARY KEY,
                 session_id      VARCHAR(255) NOT NULL,
@@ -62,24 +65,35 @@ class KnowledgeBase:
                 content_hash    TEXT,
                 metadata        JSONB NOT NULL DEFAULT '{{}}'::jsonb
             );
-        """).format(dimension=sql.SQL(str(int(self.emb_dmsion))))
+            """
+        ).format(dimension=sql.SQL(str(int(self.emb_dmsion))))
         self.cur.execute(create_kw_bs_tbl)
+        # NOTE: 
+        # - Expires_at and content_hash is only applicable for web search contents.
 
         # HNSW index - must match the distance operator used in queries
-        self.cur.execute("""
+        self.cur.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_kw_bs_embedding
             ON knowledge_base USING hnsw (embedding vector_cosine_ops);
-        """)
+            """
+        )
 
-        # Supporting indexes
-        self.cur.execute("""
+        # Index for session id and knowledge type lookups
+        self.cur.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_kw_bs_session_type
             ON knowledge_base (session_id, type);
-        """)
-        self.cur.execute("""
+            """
+        )
+
+        # Index for expires at lookups
+        self.cur.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_kw_bs_expires
             ON knowledge_base (expires_at) WHERE expires_at IS NOT NULL;
-        """)
+            """
+        )
 
         self.conn.commit()
 
@@ -98,37 +112,6 @@ class KnowledgeBase:
 
         except Exception as e:
             return f"Error: {e}", []
-
-    # ================================================
-    # TO DOCUMENTS
-    # ================================================
-
-    def embed_txt_and_add_doc_to_kw_bs(self, path: Path, cont: str) -> str:
-        """Embed text document(s) and upload to knowledge base."""
-        doc_data = self.attchmnts.get_document_metadata_from_path(path)
-        if not doc_data:
-            return f"Error reading '{path}': Path does not exist"
-
-        cont, embeddings = self._embedding_content(cont)
-        if not embeddings:
-            return "Failed to generate vector embedding: Failed to save entry"
-
-        name, mime, size = doc_data
-        return self.attchmnts.add_document_to_kw_bs(name, embeddings, cont, mime, size)
-
-    def embed_and_add_doc_to_kw_bs(self, path: Path) -> str:
-        """Embed document(s) and upload to knowledge base."""
-        doc_data = self.attchmnts.get_document_metadata_from_path(path)
-        if not doc_data:
-            return f"Error reading '{path}': Path does not exist"
-
-        cont = self.parsers.read_document(path)
-        cont, embeddings = self._embedding_content(cont)
-        if not embeddings:
-            return "Failed to generate vector embedding: Failed to save entry"
-
-        name, mime, size = doc_data
-        return self.attchmnts.add_document_to_kw_bs(name, embeddings, cont, mime, size)
 
     # ================================================
     # LIST CONTENTS
@@ -206,7 +189,7 @@ class KnowledgeBase:
                 DELETE FROM knowledge_base
                 WHERE session_id = %s AND type = %s
                 """,
-                (self.chat_logs.sess_id, typ)
+                (self.sess_id, typ)
             )
             del_count = self.cur.rowcount
             self.conn.commit()

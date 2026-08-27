@@ -7,7 +7,7 @@ from src import config
 
 from src.tools.knowledge_base import KnowledgeBase
 # from src.tools.project_manager import ProjectManager
-from src.tools.search import SearchAgent
+# from src.tools.search import SearchAgent
 
 from src.cli.flag_functions import General, Session, File
 

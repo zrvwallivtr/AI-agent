@@ -22,6 +22,28 @@ from src.logger import get_logger
 logger = get_logger(__name__)
 
 
+class PathTraversalError(Exception):
+    pass
+
+
+UPLOAD_DIR = Path(f"~/{config.APP_NAME}/uploads").expanduser().resolve()
+
+def _validate_path(path: Path) -> Path:
+    """Resolve 'path' to its real, absolute form."""
+    resolved = path.resolve()
+
+    try:
+        resolved.relative_to(UPLOAD_DIR)
+
+    except ValueError:
+        raise PathTraversalError(
+            f"Path '{path}' resolves to '{resolved}', which is outside "
+            f"the allowed directory '{UPLOAD_DIR}'"
+        )
+
+    return resolved
+
+
 class Parsers:
     def __init__(
         self,
@@ -221,11 +243,13 @@ class Parsers:
 
     def read_document(self, path: Path) -> str:
         """Return file content as a string using mapped parsers."""
-        ext = path.suffix.lower()
+        safe_path = _validate_path(path)
 
-        if not path.exists():
-            return f"Error: File {path} not found."
+        if not safe_path.exists():
+            raise FileNotFoundError(f"'{safe_path}' does not exist")
+        if not safe_path.is_file():
+            raise ValueError(f"'{safe_path}' is not a regular file")
 
-        # Route to correct parser, fallback to plain text if unknown
+        ext = safe_path.suffix.lower()
         parser = self.formats.get(ext, self.read_txt)
-        return parser(path)
+        return parser(safe_path)

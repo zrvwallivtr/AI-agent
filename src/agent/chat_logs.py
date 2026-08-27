@@ -32,25 +32,35 @@ class ChatLogs:
         self.cur.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_sessions (
-                session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                session_name VARCHAR(255) NOT NULL UNIQUE,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                session_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                session_name    VARCHAR(255) NOT NULL UNIQUE,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             """
         )
+
         self.cur.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_logs (
-                id BIGSERIAL PRIMARY KEY,
-                session_id VARCHAR(255) NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                prompt TEXT NOT NULL,
-                response TEXT NOT NULL,
-                state VARCHAR(20) NOT NULL CHECK (state IN ('external', 'internal')),
-                metadata JSONB DEFAULT '{}'::jsonb
+                id          BIGSERIAL PRIMARY KEY,
+                session_id  UUID NOT NULL REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                prompt      TEXT NOT NULL,
+                response    TEXT NOT NULL,
+                state       VARCHAR(20) NOT NULL CHECK (state IN ('external', 'internal')),
+                metadata    JSONB DEFAULT '{}'::jsonb
             );
             """
         )
+
+        # Index for session id lookup
+        self.cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_chat_logs_session_id
+            ON chat_logs (session_id);
+            """
+        )
+
         self.conn.commit()
 
     # =============================================================

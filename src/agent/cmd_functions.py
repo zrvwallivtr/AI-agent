@@ -2,13 +2,13 @@ from re import search
 from agent import format_context
 from pathlib import Path
 
-from src.agent.llm import LLM
+from src.agent.models.llm import LLM
 from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
 from src.agent import format_context as fmt_cont
 from src.tools.documents import Document
-from src.tools.search import is_connected, SearchAgent
+# from src.tools.search import is_connected, SearchAgent
 from src import config
 from src.logger import get_logger
 from tools.knowledge_base import KnowledgeBase
@@ -103,7 +103,7 @@ class Command:
 
         if attchmnt_dict:
             for doc_path, cont in attchmnt_dict.items():
-                notify = self.kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
+                notify = self.doc.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
                 print(notify)
         return
 

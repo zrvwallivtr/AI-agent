@@ -1,7 +1,7 @@
 from pathlib import Path
 from datetime import datetime
 
-from src.agent.llm import LLM
+from src.agent.models.llm import LLM
 from src import config
 
 

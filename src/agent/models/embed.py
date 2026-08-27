@@ -1,13 +1,14 @@
 import ollama
+import hashlib
 
 from src import config
 
 
-class Embedding:
+class Embed:
     def __init__(self):
         self.emb_model = config.EMBED_MODEL
 
-    def _embedding_content(self, cont: str) -> tuple[str, list[float]]:
+    def embedding_content(self, cont: str) -> tuple[str, list[float]]:
         """Generate embedding from given texts."""
         try:
             response = ollama.embed(model=self.emb_model, input=cont)

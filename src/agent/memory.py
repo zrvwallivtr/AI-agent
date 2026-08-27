@@ -11,7 +11,8 @@ from typing import Literal, Any, get_args
 
 from src import config
 from src.agent.chat_logs import ChatLogs
-from src.agent.llm import LLM
+from src.agent.models.llm import LLM
+from src.agent.models.embed import Embed
 from src.agent.tokens_handler import Tokens
 from src.models_database import EMB_MODEL_DIMENSION
 from src.logger import get_logger
@@ -60,17 +61,46 @@ class Memory:
             CREATE EXTENSION IF NOT EXISTS vector;
             """
         )
-        create_mem_emb_tbl = sql.SQL("""
-            CREATE TABLE IF NOT EXISTS memory_embeddings (
-                id BIGSERIAL PRIMARY KEY,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                embedding VECTOR({dimension}),
-                content TEXT NOT NULL,
-                category TEXT NOT NULL,
-                extraction VARCHAR(20) NOT NULL CHECK (extraction IN ('manual', 'auto'))
+
+        create_mem_emb_tbl = sql.SQL(
+            """
+            CREATE TABLE IF NOT EXISTS memory (
+                id              BIGSERIAL PRIMARY KEY,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                embedding       VECTOR({dimension}),
+                content         TEXT NOT NULL,
+                content_hash    TEXT,
+                category        TEXT NOT NULL,
+                extraction      VARCHAR(20) NOT NULL CHECK (extraction IN ('manual', 'auto'))
             );
-        """).format(dimension=sql.SQL(str(int(self.emb_dmsion))))
+            """
+        ).format(dimension=sql.SQL(str(int(self.emb_dmsion))))
         self.cur.execute(create_mem_emb_tbl)
+
+        # HNSW index - must match the distance operator used in queries
+        self.cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_memory_embedding
+            ON memory USING hnsw (embedding vector_cosine_ops);
+            """
+        )
+
+        # Index for category lookup
+        self.cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_memory_category
+            ON memory (category);
+            """
+        )
+
+        # Unique constraint on content_hash to enforce dedupe at database level
+        self.cur.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash
+            ON memory (content_hash);
+            """
+        )
+
         self.conn.commit()
 
     # ============================================================

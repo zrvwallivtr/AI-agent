@@ -19,6 +19,8 @@ DEFAULT_CONFIG  = BUNDLE_ROOT / "config.toml"
 # WRITABLE PERSISTENT DATA (STORED IN ~/.AGENT_APP)
 # ========================================================
 
+APP_NAME = "agent_app"
+
 APP_DIR        = setup.get_user_app_dir() # ~/.agent_app
 APP_DATA_DIR    = setup.get_user_app_data_dir() # ~/.agent_app/data
 CUS_PROMPT_DIR  = APP_DATA_DIR / "prompts"
@@ -132,6 +134,7 @@ DOCLING_DEFAULT             = _cfg["file_reader"]["docling_default"]
 SEARCH_ENG          = _cfg["search"]["engine"]
 MAX_RESULTS         = _cfg["search"]["max_results"]
 MAX_CHAR_PER_PAGE   = _cfg["search"]["max_char_per_page"]
+CRAWL4AI_URL        = _cfg["search"]["crawl4ai_url"]
 
 # Safeguard before enabling auto websearch
 AUTO_WEB_SEARCH_TOKENS = _cfg["search"]["auto_web_search_enable_at_model_tokens"]

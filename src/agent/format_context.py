@@ -3,9 +3,9 @@ from pathlib import Path
 from typing import Any
 
 
-def sanitize_tag_content(content: str, tag: str) -> str:
+def sanitize_tag_content(cont: str, tag: str) -> str:
     """Prevent content from closing its own delimiter tag early."""
-    cont = re.sub(rf"</?{tag}[^>]*>", f"[{tag}_tag_removed]", content, flags=re.IGNORECASE)
+    cont = re.sub(rf"</?{tag}[^>]*>", f"[{tag}_tag_removed]", cont, flags=re.IGNORECASE)
     return cont
 
 def memory_section(mem_list: list[dict[str, Any]] | None) -> str:
