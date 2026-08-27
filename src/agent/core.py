@@ -16,21 +16,22 @@ from src.logger import get_logger
 from src import config
 
 
-logger = get_logger(__name__)
+log = get_logger(__name__)
 
 
-def _last_token_usage(msgs: list[dict]) -> tuple[int, int]:
-    """Returns p_tkns and o_tkns from the latest assistant message."""
-    for msg in reversed(msgs):
+# def _last_token_usage(msgs: list[dict]) -> tuple[int, int]:
+#     """Returns p_tkns and o_tkns from the latest assistant message."""
+#     for msg in reversed(msgs):
+# 
+#         if msg["role"] == "assistant":
+#             p_tkns = msg.get("p_tkns", 0)
+#             o_tkns = msg.get("o_tkns", 0)
+#             log.info("Latest assistant response found (p_tkns=%d, o_tkns=%d)", p_tkns, o_tkns)
+#             return p_tkns, o_tkns
+# 
+#     log.warning("Latest assistant response not found")
+#     return 0, 0 # no previous assistant message yet (first turn)
 
-        if msg["role"] == "assistant":
-            p_tkns = msg.get("p_tkns", 0)
-            o_tkns = msg.get("o_tkns", 0)
-            logger.info("Latest assistant response found (p_tkns=%d, o_tkns=%d)", p_tkns, o_tkns)
-            return p_tkns, o_tkns
-
-    logger.warning("Latest assistant response not found")
-    return 0, 0 # no previous assistant message yet (first turn)
 
 def _detect_cmd(prompt: str) -> tuple[str | None, str]:
     """Extracts shortcut if detected."""
@@ -40,10 +41,9 @@ def _detect_cmd(prompt: str) -> tuple[str | None, str]:
         parts           = question_trimmed.split(" ", 1)
         cmd             = parts[0]
         cleaned_text    = parts[1].strip() if len(parts) > 1 else ""
-        logger.info("Command detected: %s", cmd)
+        log.debug("Command detected: %s", cmd)
         return cmd, cleaned_text
 
-    logger.info("No command detected")
     return None, prompt
 
 
@@ -72,10 +72,12 @@ class Agent:
         self.doc_kw_bs  = DocumentKnowledgeBase(sess_name=self.sess_name)
         # self.search_agent   = SearchAgent()
 
+
     @property
     def get_model_max_tokens(self) -> int:
         """Dynamically fetches the current token ceiling from 'self.token'."""
         return self.tokens.model_max_tokens
+
 
     # ===================================
     # Model validation
@@ -91,20 +93,19 @@ class Agent:
             unknown_models = []
             if model not in local_models:
                 unknown_models += model
-                logger.error("Unknown or unavailable model detected: %s", model)
                 raise ValueError(
                     f"Error: Unknown or unavailable model: '{model}'."
                     f"Run 'ollama pull {model}' to install model."
                 )
             known_models = set(local_models) - set(unknown_models)
-            logger.info("Fetched all local models:\n Known models = %s\n Unknown model = %s", known_models, unknown_models)
+            log.info("Detected %s known model(s) and %s unknown model(s)", known_models, unknown_models)
 
         except Exception as e:
             # If ollama is down
             if isinstance(e, ValueError):
                 raise e
-            logger.critical("Could not connect to local Ollama service: %s", e)
             raise RuntimeError(f"Error: Could not connect to local Ollama service: {e}")
+
 
     # ===================================
     # Token management
@@ -127,6 +128,7 @@ class Agent:
         #     print("Continue session...")
         #     return
         # logger.info("Current tokens within threshold. Continue session")
+
 
     # ===================================
     # Execution
@@ -152,12 +154,12 @@ class Agent:
 
         cmd, user_prompt = _detect_cmd(prompt)
 
-        # == SLASH COMMANDS ====================================
+        # === SLASH COMMANDS ====================================
 
         if cmd:
             # Only use 'user_prompt' as 'prompt' here
             if cmd == "/memorise":
-                logger.info("'/memorise' command triggered")
+                log.debug("'/memorise' command triggered")
                 msgs.append({"role": "user", "content": user_prompt})
                 response = self.cmd.cmd_memorise(
                     prompt=user_prompt,
@@ -170,7 +172,7 @@ class Agent:
                 # // END HERE //
 
             if cmd == "/recall":
-                logger.info("'/recall' command triggered")
+                log.debug("'/recall' command triggered")
                 msgs.append({"role": "user", "content": user_prompt})
                 response = self.cmd.cmd_recall(
                     prompt=user_prompt,
@@ -201,7 +203,7 @@ class Agent:
             #     return
                 # // End here //
 
-        # == FULL CONTEXT ======================================
+        # === FULL CONTEXT ======================================
 
         # Auto retrieve relevant memories
         mem_list = self.mem.toggle_auto_retrive_memory_entries(
@@ -215,47 +217,18 @@ class Agent:
 
         # Attachments (manual call by user)
         attchmnt_dict = self.doc_kw_bs.get_attachments_content(
-            is_attchmnt=is_attchmnt, doc_paths=paths
+            is_attchmnt=is_attchmnt, attch_paths=paths
         )
 
-        # Auto read knowledge base
-        # - Could add user specify retrieve list no. during session, if not specified use default.
-        # dropbox_file_data = self.file_reader.toggle_auto_read_dropbox(
-        #     messages=messages, 
-        #     prompt=prompt,
-        #     memory_entries=memory_entries, 
-        #     enable_attachments=enable_attachments,
-        #     attach_file_data=attach_files_data,
-        #     enable_auto_read_dropbox=enable_auto_read_dropbox
-        # )
-        # dropbox_sect = "# Previously uploaded file(s)\n\n".join(
-        #     f"Filename: {filename}\n"
-        #     f"Content: {content}\n\n"
-        #     for filename, content in dropbox_file_data.items()
-        # ).join("---\n\n")
-
         # Auto web search
-        # search_results, query_with_urls, search = self.search_agent.toggle_auto_web_search(
-        #     messages=messages,
-        #     prompt=prompt,
-        #     enable_attachments=enable_attachments,
-        #     enable_auto_web_search=enable_auto_web_search,
-        #     memory_entries=memory_entries,
-        #     file_contents=dropbox_file_data,
-        #     attach_file_data=attach_files_data,
-        # )
-        # web_search_sect = (
-        #     f"# Web search results\n\n"
-        #     f"{search_results}\n\n"
-        #     f"---\n\n"
-        # )
 
         cmbind_prompt = fmt_cont.build_prompt(
             prompt=prompt, mem_list=mem_list, doc_list=doc_list, attchmnt_dict=attchmnt_dict
         )
         msgs.append({"role": "user", "content": cmbind_prompt})
+        log.debug("Appended new message to current messages")
 
-        # == MODEL ANSWER ======================================
+        # === MODEL ANSWER ======================================
 
         response, p_tkns, o_tkns = LLM.model_response(
             msgs=msgs, model=self.model
@@ -269,7 +242,7 @@ class Agent:
             o_tkns=o_tkns
         )
 
-        # == STORE MEMORY(S) ===================================
+        # === STORE MEMORY(S) ===================================
 
         # self.memory.toggle_auto_store_memory_entries(
         #     enable_auto_memory_store=True,
@@ -277,9 +250,14 @@ class Agent:
         #     context=self.chat.to_llm()
         # )
 
-        # == STORE ATTACHMENT(S) ===============================
+        # === STORE ATTACHMENT(S) ===============================
 
         if attchmnt_dict:
+            log.info(
+                "Storing %d uploaded attachment(s) to session '%s' knowledge base",
+                len(attchmnt_dict),
+                self.sess_name
+            )
             for doc_path, cont in attchmnt_dict.items():
                 notify = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
                 print(notify)

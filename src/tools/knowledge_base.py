@@ -1,3 +1,4 @@
+from logging import debug
 import psycopg2
 import ollama
 import json
@@ -15,7 +16,7 @@ from src import config
 from src.logger import get_logger
 
 
-logger = get_logger(__name__)
+log = get_logger(__name__)
 
 
 class KnowledgeBase:
@@ -41,37 +42,43 @@ class KnowledgeBase:
         self.parsers    = Parsers()
         self.doc_kw_bs  = DocumentKnowledgeBase(sess_name=self.sess_name)
 
-        self._init_doc_db()
+        self._init_kw_bs()
         self.doc_names = self.doc_kw_bs.doc_names
 
-    def _init_doc_db(self):
+
+    # ================================================
+    # INITIALISE KNOWLEDGE BASE
+    # ================================================
+
+    def _init_kw_bs(self):
         """Create knowledge base table if missing."""
+        log.debug("Initialising vector extension for PostgreSQL")
         self.cur.execute(
             """
             CREATE EXTENSION IF NOT EXISTS VECTOR;
             """
         )
 
+        log.debug("Initialising tabe 'knowledge_base' with vector embedding dimension of %s", self.emb_dim)
         create_kw_bs_tbl = sql.SQL(
             """
             CREATE TABLE IF NOT EXISTS knowledge_base (
                 id              BIGSERIAL PRIMARY KEY,
                 session_id      VARCHAR(255) NOT NULL,
                 created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                expires_at      TIMESTAMPTZ,
+                expires_at      TIMESTAMPTZ,    -- Only applicable for web search contents
                 type            VARCHAR(20) NOT NULL,
                 embedding       VECTOR({dimension}),
                 content         TEXT NOT NULL,
-                content_hash    TEXT,
+                content_hash    TEXT,   -- Only applicable for web search contents
                 metadata        JSONB NOT NULL DEFAULT '{{}}'::jsonb
             );
             """
         ).format(dimension=sql.SQL(str(int(self.emb_dim))))
         self.cur.execute(create_kw_bs_tbl)
-        # NOTE: 
-        # - Expires_at and content_hash is only applicable for web search contents.
 
         # HNSW index - must match the distance operator used in queries
+        log.debug("Initialising index 'idx_kw_bs_embedding' on table 'knowledge_base' using HNSW")
         self.cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_kw_bs_embedding
@@ -80,6 +87,7 @@ class KnowledgeBase:
         )
 
         # Index for session id and knowledge type lookups
+        log.debug("Initialising index 'idx_kw_bs_session_type' on table 'knowledge_base'")
         self.cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_kw_bs_session_type
@@ -88,6 +96,7 @@ class KnowledgeBase:
         )
 
         # Index for expires at lookups
+        log.debug("Initialising index 'idx_kw_bs_expires' on table 'knowledge_base'")
         self.cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_kw_bs_expires
@@ -97,27 +106,6 @@ class KnowledgeBase:
 
         self.conn.commit()
 
-    # ================================================
-    # LIST CONTENTS
-    # ================================================
-
-    def list_all_uploaded_documents(self) -> str:
-        """Return a list of all document(s) in the database."""
-        rows = self.doc_kw_bs.doc_metadata
-        if isinstance(rows, str):
-            return rows
-
-        # Unpack data in metadata
-        lines = [
-            f"UPLOADED DOCUMENT(S)\n"
-            f"====================\n"
-            f"UPLOADED AT\t\t\t\tNAME"
-        ]
-        for time, metadata in rows:
-            data_dict = json.loads(metadata) if isinstance(metadata, str) else metadata
-            doc_name = data_dict.get("document_name", "Unknown")
-            lines.append(f"{str(time)}\t{doc_name}")
-        return "\n".join(lines)
 
     # ==================================================
     # CLEAR CONTENTS
@@ -135,11 +123,19 @@ class KnowledgeBase:
             )
             del_count = self.cur.rowcount
             self.conn.commit()
+
             if del_count == 0:
+                log.warning(
+                    "Failed to clear session '%s' knowledge base: '%s' contents not found in database",
+                    self.sess_name,
+                    typ
+                )
                 return f"Failed to remove session '{self.sess_name}' knowledge base: '{typ}' contents not found in database"
-            return f"Emptied session '{self.sess_name}' knowledge base: {typ}"
+
+            log.info("Cleared all %s contents in sesssion '%s' knowledge base", typ, self.sess_name)
+            return f"Cleared session '{self.sess_name}' knowledge base: {typ}"
 
         except Exception as e:
             self.conn.rollback()
+            log.warning("Database deletion error: %s", e)
             return f"Database deletion error: {e}"
-

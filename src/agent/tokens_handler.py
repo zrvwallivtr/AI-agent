@@ -2,20 +2,12 @@ import tiktoken
 
 from src import models_database
 
-#from src.logger import get_logger
-
-#logger = get_logger(__name__)
-
-# chat_tokens = Tokens(MODEL, MODEL_MAX_TOKENS)
-# pm_tokens = Tokens(PM_MODEL, PM_MAX_TOKENS)
 
 class Tokens:
     def __init__(self, model: str, model_max_tokens: int | None = None):
         self.model = model
 
-        # ========================================
-        # Max tokens
-        # ========================================
+        # === MAX TOKENS ====================
 
         # User specified max tokens
         if model_max_tokens is not None:
@@ -32,9 +24,7 @@ class Tokens:
                 f"Add it to MODEL_MAX or set chat_max tokens in config.toml."
             )
 
-        # ========================================
-        # Encoder
-        # ========================================
+        # === ENCODER =======================
 
         try:
             # Looks up exact token vocabulary mapped to specific model name
@@ -48,13 +38,16 @@ class Tokens:
             #     self.model
             # )
 
+
     def estimate(self, text: str) -> int:
         """Estimates token count base on charater length (4 chars ~ 1 token)."""
         return len(text) // 4
 
+
     def check_fit(self, text: str, reserve: int = 50) -> bool:
         """Check if text fits within the model's bounds."""
         return (self.estimate(text) + reserve) <= self.model_max_tokens
+
 
     # =================================
     # Count tokens
@@ -66,6 +59,7 @@ class Tokens:
             # logger.warning("Cannot count tokens in string: No text provided")
             return 0
         return len(self.encoder.encode(text))
+
 
     def count_history_tokens(self, msgs: list[dict]) -> int:
         """Calculates total token weight."""

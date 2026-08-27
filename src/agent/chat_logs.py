@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Literal, Any
 
 from src import config
+from src.logger import get_logger
+
+
+log = get_logger(__name__)
 
 
 class ChatLogs:
@@ -19,16 +23,26 @@ class ChatLogs:
         )
         self.cur = self.conn.cursor()
 
-        self._init_chat_logs_db()
         self.sys_prompt     = config.SYS_PROMPT
         self.cmp_prompt   = config.COMPRESS_PROMPT
 
         self.sess_name      = sess_name.strip() if sess_name else "default_session"
+
+        self._init_chat_logs_db()
         self.sess_id        = self._get_or_create_sess_id()
         self.convs          = self.get_entire_conv()
 
+
+    # =============================================================
+    # INITIALISE CHAT LOGS DATABASE
+    # =============================================================
+
     def _init_chat_logs_db(self):
         """Create session lookup and chat logs table if missing."""
+        log.info(
+            "Initialising chat_sessions table for session '%s'",
+            self.sess_name
+        )
         self.cur.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_sessions (
@@ -39,6 +53,10 @@ class ChatLogs:
             """
         )
 
+        log.info(
+            "Initialising chat_logs table for session '%s'",
+            self.sess_name
+        )
         self.cur.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_logs (
@@ -54,6 +72,7 @@ class ChatLogs:
         )
 
         # Index for session id lookup
+        log.info("Initialising index 'idx_chat_logs_session_id' on table 'chat_logs'")
         self.cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_chat_logs_session_id
@@ -63,12 +82,13 @@ class ChatLogs:
 
         self.conn.commit()
 
+
     # =============================================================
     # SESSION ID
     # =============================================================
 
     def get_sess_id(self) -> str | None:
-        """Fetch session id."""
+        """Fetch session id from chat_sessions table."""
         self.cur.execute(
             """
             SELECT session_id
@@ -79,7 +99,22 @@ class ChatLogs:
         )
         self.conn.commit()
         row = self.cur.fetchone()
-        return str(row[0]) if row else None
+
+        if row:
+            sess_id = str(row[0])
+            log.info(
+                "Retrieved session id '%s' for session '%s'",
+                sess_id,
+                self.sess_name
+            )
+            return sess_id
+        else:
+            log.info(
+                "Session id for session '%s' not found: Session does not exists",
+                self.sess_name
+            )
+            return
+
 
     def get_all_existing_sess_metadata(self) -> dict:
         """Fetch all session names from database."""
@@ -92,14 +127,19 @@ class ChatLogs:
         )
         self.conn.commit()
         rows = self.cur.fetchall()
+
         if not rows:
+            log.info("No existing session found in chat_sessions")
             return {}
+
         for row in rows:
             sess_dict[str(row[0])] = {
                 "session_name": str(row[1]),
                 "created_at": str(row[2])
             }
+        log.info("%d session(s) found in the chat_sessions", len(rows))
         return sess_dict
+
 
     def _create_sess(self) -> str:
         """Create session entry on the chat_sessions table and return its session id."""
@@ -116,8 +156,13 @@ class ChatLogs:
 
         if row is None:
             raise RuntimeError("Failed to create session: Database return no ID.")
-        self.conn.commit()
+
+        log.info(
+            "Session '%s' created: Added new session entry to the chat_sessions table", 
+            self.sess_name
+        )
         return str(row[0])
+
 
     def _get_or_create_sess_id(self) -> str:
         """
@@ -126,9 +171,12 @@ class ChatLogs:
         new generated session id.
         """
         sess_id = self.get_sess_id()
+
         if not sess_id:
+            log.info("Session '%s' does not exists. Creating new session", self.sess_name)
             sess_id = self._create_sess()
         return sess_id
+
 
     # =============================================================
     # EDIT CHAT LOGS
@@ -161,10 +209,15 @@ class ChatLogs:
             (self.sess_id, prompt, response, state, json.dumps(metadata or {}))
         )
         self.conn.commit()
-        self.convs = self.get_entire_conv() # resync messages
+        log.info("New conversation turn added to session '%s' chat logs", self.sess_name)
+
+        # Resync messages
+        self.convs = self.get_entire_conv()
+        log.debug("Resynced session '%s' conversations", self.sess_name)
+
 
     def clear_sess_chat_logs(self) -> tuple[str, bool]:
-        """Clear session related all chat logs."""
+        """Clear all session related chat logs."""
         self.cur.execute(
             """
             DELETE FROM chat_logs
@@ -174,10 +227,19 @@ class ChatLogs:
         )
         del_count = self.cur.rowcount
         self.conn.commit()
-        if del_count == 0: # Noting is deleted
-            return f"Failed to clear chat log(s). Chat logs or session not found: session={self.sess_name}", False
+
+        if del_count == 0:
+            log.warning(
+                "Failed to clear chat logs: Session '%s' does not exists or has no chat logs",
+                self.sess_name
+            )
+            return f"Failed to clear chat logs: Session '{self.sess_name}' does not exists or has no chat logs", False
+        log.info("Cleared session '%s' chat logs", self.sess_name)
+
         self.convs = self.get_entire_conv() # resync messages
-        return f"Cleared chat log(s): session={self.sess_name}", True
+        log.debug("Resynced session '%s' conversations", self.sess_name)
+        return f"Cleared session '{self.sess_name}' chat logs", True
+
 
     # =============================================================
     # FROM CHAT LOGS
@@ -201,17 +263,24 @@ class ChatLogs:
         )
         self.conn.commit()
         rows = self.cur.fetchall()
+
         if rows:
             convs = []
             for row in rows:
                 convs.append({"role": "user", "content": row[0]})
                 convs.append({"role": "assistant", "content": row[1]})
+            log.debug(
+                "%d conversation turns retrieved from session '%s'",
+                len(rows),
+                self.sess_name
+            )
             return sys_prompt + convs
+        log.debug(
+            "Session '%s' conversation does not exists. Returning system prompt only",
+            self.sess_name
+        )
         return sys_prompt
 
-    # def get_entire_logs_wth_metadata(self) -> list[dict]:
-    #     """Get entire conversation, including system prompt and metadata."""
-    #     return list(self._msgs)
 
     def get_latest_conv_turn(self) -> list[dict] | None:
         """Get the latest external user/assistant conversation turn from the chat log."""
@@ -227,12 +296,25 @@ class ChatLogs:
         )
         self.conn.commit()
         row = self.cur.fetchone()
-        return [
-            {"role": "user", "content": row[0]},
-            {"role": "assistant", "content": row[1]}
-        ] if row else None
 
-    def get_old_convs(self) -> list[dict]:
+        if row:
+            log.debug(
+                "Retrieved latest conversation turn from session '%s' chat logs",
+                self.sess_name
+            )
+            return [
+                {"role": "user", "content": row[0]},
+                {"role": "assistant", "content": row[1]}
+            ]
+        else:
+            log.debug(
+                "No conversation found in session '%s' chat logs: New session or session does not exists",
+                self.sess_name
+            )
+            return
+
+
+    def get_old_convs(self) -> list[dict] | None:
         """
         Get all previous user/assistant conversation turns
         right before the latest external conversation from
@@ -255,11 +337,24 @@ class ChatLogs:
         self.conn.commit()
         rows = self.cur.fetchall()
 
-        convs = []
-        for row in rows:
-            convs.append({"role": "user", "content": row[0]})
-            convs.append({"role": "assistant", "content": row[1]})
-        return convs
+        if rows:
+            convs = []
+            for row in rows:
+                convs.append({"role": "user", "content": row[0]})
+                convs.append({"role": "assistant", "content": row[1]})
+            log.debug(
+                "%d conversation turn(s) retrived form session '%s' chat logs",
+                len(rows),
+                self.sess_name
+            )
+            return convs
+        else:
+            log.debug(
+                "No conversation found in session '%s' chat logs: New session or session does not exists",
+                self.sess_name
+            )
+            return
+
 
     # =============================================================
     # METADATA
@@ -287,8 +382,10 @@ class ChatLogs:
                     "mime_type": mime_type,
                     "size_bytes": attchmnt.stat().st_size if attchmnt.exists else 0
                 }
+                log.debug("Added metadata to attachment '%s'", attchmnt)
             return attchmnts_dict
         return {}
+
 
     def _web_search_metadata(
         self,
@@ -305,12 +402,16 @@ class ChatLogs:
             ]
         }
         """
+        # /////////////////////////////////////////////
+        # MIGHT REQUIRE UPDATE FOR METADATA STRUCTURE
         if qry_wth_urls:
             wb_search_dict = {}
             for qry_dict in qry_wth_urls:
                 wb_search_dict.update(qry_dict)
             return wb_search_dict
+        # /////////////////////////////////////////////
         return {}
+
 
     def _tool_calls_metadata(
         self,
@@ -320,7 +421,7 @@ class ChatLogs:
         """
         Return a dictionary of all tool calls.
 
-        "tool_calls": {
+        {
             "attachments": ,
             "web_search": 
         }
@@ -331,6 +432,7 @@ class ChatLogs:
         if qry_wth_urls:
             tool_entries["web_search"] = self._web_search_metadata(qry_wth_urls)
         return tool_entries
+
 
     # =============================================================
     # Exit

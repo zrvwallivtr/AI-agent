@@ -14,7 +14,7 @@ from src.logger import get_logger
 from tools.knowledge_base import KnowledgeBase
 
 
-logger = get_logger(__name__)
+log = get_logger(__name__)
 
 
 class Command:
@@ -32,6 +32,7 @@ class Command:
         self.kw_bs      = KnowledgeBase(sess_name=self.sess_name)
         self.doc_kw_bs  = DocumentKnowledgeBase(sess_name=self.sess_name)
         # self.search_agent   = SearchAgent()
+
 
     # ========================================================
     # Memory
@@ -51,61 +52,72 @@ class Command:
               saved.
         """
         if not prompt:
-            logger.warning("Command '/memorise' aborted: No prompt was provided")
+            log.warning("Command '/memorise' aborted: No prompt was provided")
             return "Please specify what to memorize."
 
         messages = self.chat_logs.get_entire_conv()
 
-        # == FULL CONTEXT ==========================================
+        # === FULL CONTEXT ==========================================
 
         # Attachments (manual call by user)
         attchmnt_dict = self.doc_kw_bs.get_attachments_content(
-            is_attchmnt=is_attchmnt, doc_paths=paths
+            is_attchmnt=is_attchmnt, attch_paths=paths
         )
 
         cmbind_prompt = fmt_cont.build_prompt(prompt=prompt, attchmnt_dict=attchmnt_dict)
         messages.append({"role": "user", "content": cmbind_prompt})
 
-        # == EXTRACT AND STORE MEMORY(S) ===========================
+        # === EXTRACT AND STORE MEMORY(S) ===========================
 
         print(f"Extracting content from user's input...")
-        created_ids, p_tkns, o_tkns = self.mem.extract_and_store_mem_from_conv(
+        response = self.mem.extract_and_store_mem_from_conv(
             extraction="manual", prompt=prompt
         )
+        if not response:
+            return "Error: No data was extracted by the model."
+        created_ids, p_tkns, o_tkns = response
 
-        # Print to terminal
+        # == PRINT TO TERMINAL ======================================
+
         mem_dict = self.mem.get_mem_content_from_ids(created_ids)
         if mem_dict:
             print("CONTENT SAVED:")
             for cont, ctgry in mem_dict.items():
                 print(f"[{ctgry}] {cont}\n\n")
         else:
-            return "Error: No data was extracted by the model."
+            return "Error: Unable to retrieve entry(s) from memory."
 
         # User confirm options
         choice = input("Press [Enter] to continue or type [u] to undo:")
         if choice == "u":
+            log.debug("User selected [u]: Undoing saved memory(s)")
             self.mem.delete_mem(created_ids)
             return "Entry deleted."
 
         # Save messages
-        confirmation = "Important information(s) has been extracted added to database."
+        mock_resp = "Important information(s) has been extracted added to database."
         self.chat_logs.add_conv_turn(
             prompt=prompt,
-            response=confirmation,
+            response=mock_resp,
             state="external",
             attchmnts=paths,
             p_tkns=p_tkns,
             o_tkns=o_tkns
         )
 
-        # == STORE ATTACHMENT(S) ===================================
+        # === STORE ATTACHMENT(S) ===================================
 
         if attchmnt_dict:
+            log.info(
+                "Storing %d uploaded attachment(s) to session '%s' knowledge base",
+                len(attchmnt_dict),
+                self.sess_name
+            )
             for doc_path, cont in attchmnt_dict.items():
                 notify = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
                 print(notify)
         return
+
 
     def cmd_recall(
         self,
@@ -115,26 +127,26 @@ class Command:
     ) -> str | None:
         """Retrieve and print relevant entries according to user prompt."""
         if not prompt:
-            logger.warning("Command '/recall' aborted: No prompt was provided")
+            log.warning("Command '/recall' aborted: No prompt was provided")
             return "Please specify what to recall."
 
         messages = self.chat_logs.get_entire_conv()
 
-        # == FULL CONTEXT ==========================================
+        # === FULL CONTEXT ==========================================
 
         # Retrieve memory(s)
         mem_list = self.mem.query_similar_content(prompt)
 
         # Attachments (manual call by user)
         attchmnt_dict = self.doc_kw_bs.get_attachments_content(
-            is_attchmnt=is_attchmnt, doc_paths=paths
+            is_attchmnt=is_attchmnt, attch_paths=paths
         )
 
         cmbind_prompt = fmt_cont.build_prompt(
             prompt=prompt, mem_list=mem_list, attchmnt_dict=attchmnt_dict
         )
 
-        # == MODEL ANSWER ==========================================
+        # === MODEL ANSWER ==========================================
 
         # Model interpret recalled memory(s)
         answer, p_tkns, o_tkns = LLM.response_memory_recall_format(
@@ -154,13 +166,19 @@ class Command:
             o_tkns=o_tkns
         )
 
-        # == STORE ATTACHMENT(S) ===================================
+        # === STORE ATTACHMENT(S) ===================================
 
         if attchmnt_dict:
+            log.info(
+                "Storing %d uploaded attachment(s) to session '%s' knowledge base",
+                len(attchmnt_dict),
+                self.sess_name
+            )
             for doc_path, cont in attchmnt_dict.items():
                 notify = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
                 print(notify)
         return
+
 
     # ========================================================
     # Search

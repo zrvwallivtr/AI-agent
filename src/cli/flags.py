@@ -5,7 +5,7 @@ from src.agent.core import Agent
 from src.agent.memory import Memory
 from src import config
 
-from src.tools.knowledge_base import KnowledgeBase
+from src.tools.document_knowledge_base import DocumentKnowledgeBase
 # from src.tools.project_manager import ProjectManager
 # from src.tools.search import SearchAgent
 
@@ -42,7 +42,7 @@ def main():
     agent       = Agent(model=args.model, sess_name=args.session)
     session     = Session(args.session or args.new_session or args.delete_session)
     file        = File(args.session)
-    kw_bs       = KnowledgeBase(args.session)
+    doc_kw_bs   = DocumentKnowledgeBase(args.session)
 
     # =================================================================
     # Delete
@@ -99,7 +99,7 @@ def main():
             return
 
     if args.list_files:
-        print(kw_bs.list_all_uploaded_documents())
+        print(doc_kw_bs.list_all_uploaded_documents())
 
     # =================================================================
     # Project

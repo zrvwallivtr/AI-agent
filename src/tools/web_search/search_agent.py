@@ -34,11 +34,13 @@ def is_connected(host="1.1.1.1", port=53, timeout=3):
     except (socket.timeout, OSError):
         return False
 
+
 class QueryRouter:
     def __init__(self):
         self.model  = config.MODEL
         self.prompt = config.SEARCH_OR_NOT_PROMPT
         self.tokens = Tokens(model=self.model)
+
 
     def search_or_not(self, context: list[dict], prompt: str) -> tuple[bool, int, int]:
         """
@@ -63,6 +65,7 @@ class QueryGenerator:
         self.model  = config.MODEL
         self.prompt = config.QUERY_PROMPT
         self.tokens = Tokens(model=self.model)
+
 
     def _search_query_check(self, search_query: str) -> str:
         """
@@ -89,6 +92,7 @@ class QueryGenerator:
 
         return search_query
 
+
     def generate_query(self, context: list[dict], prompt: str) -> tuple[str, int, int]:
         """Generate query from user input with dynamic date injection."""
         # Get current date
@@ -106,6 +110,7 @@ class QueryGenerator:
 
         return self._search_query_check(query), p_tkns, o_tkns
 
+
 class Search:
     def __init__(self, sess_name: str | None = None):
         self.sess_name  = sess_name
@@ -114,6 +119,7 @@ class Search:
         self.s_client   = SearchClient(sess_name=self.sess_name)
         self.qry_rout   = QueryRouter()
         self.qry_gen    = QueryGenerator()
+
 
     def gen_query_and_get_surface_content(
         self,

@@ -8,69 +8,6 @@ from src import config
 
 console = Console()
 
-# def get_last_two_entries_roles(context: list[dict]) -> str:
-#     """
-#     Get the last two entries of the entire message dictionary, ensure
-#     the last two entries are ordered in 'user' then 'assistant'. Else,
-#     only returns 'user' entry.
-#     """
-#     last_two_entries = context[-2:]
-# 
-#     # If conversation contains more than two entries
-#     if len(last_two_entries) == 2:
-#         roles = [msg.get("role") for msg in last_two_entries]
-#         
-#         # "user" then "assistant"
-#         if roles == ["user", "assistant"]:
-#             return "\n".join(
-#                 f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
-#                 for msg in last_two_entries
-#             )
-# 
-#         # "assistant" then "user"
-#         if roles == ["assistant", "user"]:
-#             user_msg = last_two_entries[1]
-#             return f"{user_msg.get('role', 'user')}: {user_msg.get('content', '')}"
-# 
-#     # If conversation contains only 1 entry
-#     if len(last_two_entries) == 1:
-#         return "Error: Format incorrect."
-# 
-#     return ""
-# 
-# def get_trimmed_previous_entries(context: list[dict]) -> str:
-#     """
-#     Get all previous entries excluding the system prompt and the
-#     new entries starting with 'user'.
-#     """
-#     last_two_entries = context[-2:]
-# 
-#     # If conversation contains more than two entries
-#     if len(last_two_entries) == 2:
-#         last_two_roles = [msg.get("role") for msg in last_two_entries]
-# 
-#         # "user" then "assistant"
-#         if last_two_roles == ["user", "assistant"]:
-#             return "\n".join(
-#                 f"{msg.get('role', 'unknown')}: {msg.get('content', '')}"
-#                 for msg in context[:-2] # Excluding the last two entries
-#                 if msg.get("role") != "system" # Excluding system prompt
-#             )
-# 
-#         # "assistant" then "user"
-#         if last_two_roles == ["assistant", "user"]:
-#             return "\n".join(
-#                 f"{msg.get('role', 'user')}: {msg.get('content', '')}"
-#                 for msg in context[:-1] # Excluding the last one entry
-#                 if msg.get("role") != "system" # Excluding system prompt
-#             )
-# 
-#     # If conversation contains only 1 entry
-#     if len(last_two_entries) == 1:
-#         return "Error: Format incorrect."
-# 
-#     return ""
-
 
 class LLM:
 
@@ -83,10 +20,12 @@ class LLM:
         system_entry = {"role": "system", "content": content}
         return system_entry
 
+
     @staticmethod
     def assistant(content: str) -> dict:
         assistant_entry = {"role": "assistant", "content": content}
         return assistant_entry
+
 
     @staticmethod
     def user(content: str) -> dict:
@@ -159,6 +98,7 @@ class LLM:
 
         return response, p_tkns, o_tkns
 
+
     # =====================================================================
     # Modified model response for customised system prompt and context
     # =====================================================================
@@ -187,6 +127,7 @@ class LLM:
         o_tkns   = getattr(response, "eval_cound", 0) or 0
         return content, p_tkns, o_tkns
 
+
     # =====================================================================
     # Memory response formats
     # =====================================================================
@@ -209,4 +150,3 @@ class LLM:
         else:
             msgs = [LLM.system(system_prompt)] + [LLM.user(prompt)]
         return LLM.model_response(msgs, model)
-

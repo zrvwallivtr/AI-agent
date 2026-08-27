@@ -28,6 +28,7 @@ class SearchClient:
 
         self._init_search_logs_db()
 
+
     def _init_search_logs_db(self):
         """Create search logs table if missing."""
         self.cur.execute(
@@ -44,6 +45,7 @@ class SearchClient:
             """
         )
         self.conn.commit()
+
 
     # ===================================================
     # SEARCH
@@ -79,6 +81,7 @@ class SearchClient:
             print(f"Search failed: {e}")
             return
 
+
     # ===================================================
     # SEARCH LOGS
     # ===================================================
@@ -98,6 +101,7 @@ class SearchClient:
                 (self.sess_id, qry, url, title, snippet)
             )
             self.conn.commit()
+
 
     def clear_sess_search_logs(self) -> str:
         """Clear all session related search logs."""

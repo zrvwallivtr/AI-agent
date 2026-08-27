@@ -4,10 +4,10 @@ from typing_extensions import Doc
 from pathlib import Path
 
 from src import config
-
 from src.agent.chat_logs import ChatLogs
 from src.agent.core import Agent
-# from src.tools.doc_knowledge_base import DocKnowledgeBase
+from src.tools.knowledge_base import KnowledgeBase
+
 
 conn = psycopg2.connect(
     dbname=config.DBNAME,
@@ -18,12 +18,15 @@ conn = psycopg2.connect(
 )
 cur = conn.cursor()
 
+
 def _del_sess(sess_name: str | None = None) -> str:
     """
     Delete session related chat logs and database contents. If 'session'
     is not specified, delete default session related contents.
     """
-    chat_logs = ChatLogs(sess_name=sess_name)
+    chat_logs   = ChatLogs(sess_name=sess_name)
+    kw_bs       = KnowledgeBase(sess_name=sess_name)
+
     sess_id = chat_logs.get_sess_id()
     if not sess_id:
         return f"Failed to delete session: Session '{sess_name}' does not exist"
@@ -33,11 +36,9 @@ def _del_sess(sess_name: str | None = None) -> str:
     if response:
         print(response)
 
-    # file_reader = DocKnowledgeBase(session)
-
-    # # Clear all files in dropbox
-    # clear_session_dropbox_response  = file_reader.clear_session_dropbox()
-    # print(clear_session_dropbox_response) if clear_session_dropbox_response else None
+    # Clear session knowledge base
+    response = kw_bs.clear_sess_kw_bs("document")
+    # response = kw_bs.clear_sess_kw_bs("web_search")
 
     # DELETE SESSION
     # Ensure all session related contents are cleared
@@ -52,6 +53,7 @@ def _del_sess(sess_name: str | None = None) -> str:
         conn.commit()
         del_count = cur.rowcount
         conn.commit()
+
         if del_count == 0:
             return f"Failed to delete session: session={sess_name}"
         return f"Session deleted: session={sess_name}"
@@ -112,6 +114,7 @@ class Session:
     def __init__(self, sess_name: str):
         self.sess_name  = sess_name
 
+
     def create_session(
         self,
         model: str,
@@ -124,10 +127,12 @@ class Session:
             return f"New session created: session={self.sess_name}"
         return General.question(prompt=prompt, model=model, sess_name=self.sess_name)
 
+
     def delete_session(self) -> str:
         """Delete session's related files."""
         response = _del_sess(self.sess_name)
         return response
+
 
     def list_session(self):
         """List all user created sessions, do not display session's chat history."""
@@ -141,6 +146,7 @@ class Session:
             print(f"{sess_dict[sess]["created_at"]}\t{sess_dict[sess]["session_name"]}")
         print("\n")
 
+
 # =========================================================
 # File class
 # =========================================================
@@ -148,6 +154,7 @@ class Session:
 class File:
     def __init__(self, sess_name: str):
         self.sess_name = sess_name
+
 
     def attachments_with_prompt(
         self,

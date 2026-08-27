@@ -1,44 +1,34 @@
-import os
-from os.path import exists
-import re
-import json
 import pdfplumber
 import openpyxl
 import docx
 import ebooklib
-import mimetypes
-import warnings
-from typing import Optional
 from pathlib import Path
 from ebooklib import epub
 from bs4 import BeautifulSoup
-from typing import Any
 from docling.document_converter import DocumentConverter
 
 from src import config
 from src.logger import get_logger
 
 
-logger = get_logger(__name__)
+log = get_logger(__name__)
 
 
 class PathTraversalError(Exception):
     pass
 
 
-UPLOAD_DIR = Path(f"~/.{config.APP_NAME}/uploads").expanduser().resolve()
-
 def _validate_path(path: Path) -> Path:
     """Resolve 'path' to its real, absolute form."""
     resolved = path.resolve()
 
     try:
-        resolved.relative_to(UPLOAD_DIR)
+        resolved.relative_to(config.UPLOAD_DIR)
 
     except ValueError:
         raise PathTraversalError(
             f"Path '{path}' resolves to '{resolved}', which is outside "
-            f"the allowed directory '{UPLOAD_DIR}'"
+            f"the allowed directory '{config.UPLOAD_DIR}'"
         )
 
     return resolved
@@ -90,12 +80,14 @@ class Parsers:
         """Reads csv as plain text files."""
         return self.read_txt(path, "csv")
 
+
     def _docling_read_csv(self, path: Path) -> str:
         """Convert csv to markdown via docling."""
-        logger.info(f"Converting CSV file: {path}")
+        log.info(f"Converting CSV file: {path}")
         print(f"Converting CSV file: {path}")
         result = self.converter.convert(path)
         return result.document.export_to_markdown()
+
 
     def _read_xlsx(self, path: Path) -> str:
         """Extracts text content from spreadsheet row by row."""
@@ -113,24 +105,29 @@ class Parsers:
                         clean_row = [str(cell).strip() if cell is not None else "" for cell in row]
                         excel_text.append(" | ".join(clean_row))
 
-            logger.info("Extracted text content from xlsx file row by row: path='%s', sheets=%d", path, len(wb.sheetnames))
+            log.info("Extracted text content from xlsx file row by row: path='%s', sheets=%d", path, len(wb.sheetnames))
             return "\n".join(excel_text)
 
         except Exception as e:
-            logger.error("Failed to read xlsx file: path=%s, error=%s", path, e)
+            log.error("Failed to read xlsx file: path=%s, error=%s", path, e)
             return f"Failed to extract file content"
+
 
     def _read_yaml(self, path: Path) -> str:
         return self.read_txt(path, "yaml")
 
+
     def _read_yml(self, path: Path) -> str:
         return self.read_txt(path, "yml")
+
 
     def _read_toml(self, path: Path) -> str:
         return self.read_txt(path, "toml")
 
+
     def _read_xml(self, path: Path) -> str:
         return self.read_txt(path, "xml")
+
 
     # =======================================================
     # Text documents
@@ -142,20 +139,22 @@ class Parsers:
             with pdfplumber.open(path) as pdf:
                 pages = [page.extract_text() for page in pdf.pages]
                 pages = [p for p in pages if p]
-                logger.info("Extracted PDF text content page by page: path='%s', pages=%d", path, len(pdf.pages))
+                log.info("Extracted PDF text content page by page: path='%s', pages=%d", path, len(pdf.pages))
                 return "\n\n".join(pages)
 
         except Exception as e:
-            logger.error("Failed to read PDF file: path=%s, error=%s", path, e)
+            log.error("Failed to read PDF file: path=%s, error=%s", path, e)
             return f"Failed to extract file content"
+
 
     def _docling_read_pdf(self, path: Path) -> str:
         """Convert pdf to markdown via docling."""
-        logger.info(f"Converting PDF file: {path}")
+        log.info(f"Converting PDF file: {path}")
         print(f"Converting PDF file: {path}")
         result = self.converter.convert(path)
         return result.document.export_to_markdown()
     
+
     def _read_docx(self, path: Path) -> str:
         """Extracts structural text elements line by line from document."""
         try:
@@ -167,12 +166,13 @@ class Parsers:
                 if clean_text:
                     paragraphs.append(clean_text)
             
-            logger.info("Extracted docx text content line by line: path='%s', paragraphs=%d", path, len(paragraphs))
+            log.info("Extracted docx text content line by line: path='%s', paragraphs=%d", path, len(paragraphs))
             return "\n".join(paragraphs)
 
         except Exception as e:
-            logger.error("Failed to read DOCX file: path='%s', error=%s", path, e)
+            log.error("Failed to read DOCX file: path='%s', error=%s", path, e)
             return f"Failed to extract file content"
+
 
     def _read_epub(self, path: Path) -> str:
         """Extracts plain text blocks from internal EPUB XHTML document payloads."""
@@ -193,7 +193,7 @@ class Parsers:
                     if plain_text:
                         chapters_text.append(plain_text)
 
-            logger.info(
+            log.info(
                 "Extracted plain text blocks from EPUB file: path='%s', chapters=%d",
                 path,
                 len(chapters_text)
@@ -201,15 +201,17 @@ class Parsers:
             return "\n\n".join(chapters_text)
 
         except Exception as e:
-            logger.error("Failed to read EPUB file: path='%s', error=%s", path, e)
+            log.error("Failed to read EPUB file: path='%s', error=%s", path, e)
             return f"Failed to extract file content"
+
 
     def _docling_read_epub(self, path: Path) -> str:
         """Convert EPUB to markdown via docling."""
-        logger.info(f"Converting EPUB file: {path}")
+        log.info(f"Converting EPUB file: {path}")
         print(f"Converting EPUB file: {path}")
         result = self.converter.convert(path)
         return result.document.export_to_markdown()
+
 
     # =======================================================
     # PROGRAMMING
@@ -222,6 +224,7 @@ class Parsers:
 
         return f"```{lang}\n{content}\n```"
 
+
     # =======================================================
     # Plain text
     # =======================================================
@@ -231,11 +234,12 @@ class Parsers:
         try:
             cont = path.read_text(encoding="utf-8", errors="ignore")
             clean_cont = "".join(c for c in cont if c.isprintable() or c in "\n\r\t")
-            logger.info("Extracted '%s' file content as plain text: path='%s'", file_type, path)
+            log.info("Extracted '%s' file content as plain text: path='%s'", file_type, path)
             return clean_cont
         except Exception as e:
-            logger.error(f"Failed to read '%s' file: path='%s', error=%s", file_type, path, e)
+            log.error(f"Failed to read '%s' file: path='%s', error=%s", file_type, path, e)
             return f"Failed to extract file content"
+
 
     # =======================================================
     # READ

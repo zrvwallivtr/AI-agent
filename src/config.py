@@ -22,6 +22,8 @@ DEFAULT_CONFIG  = BUNDLE_ROOT / "config.toml"
 APP_NAME = "agent_app"
 
 APP_DIR        = setup.get_user_app_dir() # ~/.agent_app
+UPLOAD_DIR      = APP_DIR / "uploads"
+
 APP_DATA_DIR    = setup.get_user_app_data_dir() # ~/.agent_app/data
 CUS_PROMPT_DIR  = APP_DATA_DIR / "prompts"
 CHATS_DIR       = APP_DATA_DIR / "chats"
