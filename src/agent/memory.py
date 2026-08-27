@@ -11,6 +11,7 @@ from typing import Literal, Any, get_args
 
 from src import config
 from src.agent.chat_logs import ChatLogs
+from src.agent.models.embed import Embed
 from src.agent.models.llm import LLM
 from src.agent.models.embed import Embed
 from src.agent.tokens_handler import Tokens
@@ -43,16 +44,16 @@ class Memory:
         self.sess_name          = sess_name
         self.project            = project
         self.model              = config.MODEL
-        self.emb_model          = config.EMBED_MODEL
-        self.emb_dmsion         = EMB_MODEL_DIMENSION[self.emb_model]
         self.mem_prompt         = config.MEM_PROMPT
         self.mem_manual_prompt  = config.MEM_MANUAL_PROMPT
         self.qry_limit          = config.RETRIEVE_MEM_ENTRY_LIMIT
-        self._init_memory_db()
 
-        self.chat_logs          = ChatLogs(sess_name=self.sess_name)
-        self.model_tkns         = Tokens(self.model)
-        self.emb_model_tkns     = Tokens(self.emb_model)
+        self.chat_logs      = ChatLogs(sess_name=self.sess_name)
+        self.embed          = Embed()
+        self.emb_dim        = self.embed.emb_dim
+        self.model_tkns     = Tokens(self.model)
+
+        self._init_memory_db()
 
     def _init_memory_db(self):
         """Create memory table if missing."""
@@ -74,7 +75,7 @@ class Memory:
                 extraction      VARCHAR(20) NOT NULL CHECK (extraction IN ('manual', 'auto'))
             );
             """
-        ).format(dimension=sql.SQL(str(int(self.emb_dmsion))))
+        ).format(dimension=sql.SQL(str(int(self.emb_dim))))
         self.cur.execute(create_mem_emb_tbl)
 
         # HNSW index - must match the distance operator used in queries
@@ -102,22 +103,6 @@ class Memory:
         )
 
         self.conn.commit()
-
-    # ============================================================
-    # EMBEDDING MEMORY CONTENT
-    # ============================================================
-
-    def _embedding_content(self, cont: str) -> tuple[str, list[float]]:
-        """Generate embedding from given texts."""
-        try:
-            response = ollama.embed(model=self.emb_model, input=cont)
-            embeddings = response["embeddings"][0]
-            if not embeddings:
-                return "Error: Model failed to generate vector embedding", []
-            return cont, embeddings
-
-        except Exception as e:
-            return f"Error: {e}", []
 
     # ============================================================
     # EDIT MEMORY LOGS
@@ -157,7 +142,7 @@ class Memory:
         extraction: Literal["manual", "auto"]
     ) -> str:
         """Embeds texts and adds to memory logs."""
-        cont, embeddings = self._embedding_content(cont)
+        cont, embeddings = self.embed.embedding_content(cont)
         if not embeddings:
             return "Failed to generate vector embedding: Failed to save entry"
 
@@ -210,7 +195,7 @@ class Memory:
         """Queries database for similar content."""
         mem_dict = {}
 
-        qry, qry_embeddings = self._embedding_content(qry)
+        qry, qry_embeddings = self.embed.embedding_content(qry)
         self.cur.execute(
             """
             SELECT content, 1 - (embedding <=> %s) AS cosine_similarity
@@ -334,7 +319,7 @@ class Memory:
         prompt: str
     ) -> list[dict[str, Any]] | None:
         """Auto memory entry ability, returns memory entries if its toggled on."""
-        if is_auto_mem_rtve == True:
+        if is_auto_mem_rtve:
             return self.query_similar_content(prompt)
         return
 

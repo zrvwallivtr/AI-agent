@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from src.agent.chat_logs import ChatLogs
+from src.agent.models.embed import Embed
 from src.tools.parsers import Parsers
 from src.models_database import EMB_MODEL_DIMENSION
-from src.tools.documents import Document
+from src.tools.document_knowledge_base import DocumentKnowledgeBase
 from src import config
 from src.logger import get_logger
 
@@ -32,17 +33,16 @@ class KnowledgeBase:
         self.cur    = self.conn.cursor()
 
         self.sess_name  = sess_name
-        self.emb_model  = config.EMBED_MODEL
-        self.emb_dmsion = EMB_MODEL_DIMENSION[self.emb_model]
-        self.qry_limit  = config.RETRIEVE_MEM_ENTRY_LIMIT
 
         self.chat_logs  = ChatLogs(sess_name=self.sess_name)
         self.sess_id    = self.chat_logs.sess_id
+        self.embed      = Embed()
+        self.emb_dim    = self.embed.emb_dim
         self.parsers    = Parsers()
-        self.attchmnts  = Document(sess_name=self.sess_name)
+        self.doc_kw_bs  = DocumentKnowledgeBase(sess_name=self.sess_name)
 
         self._init_doc_db()
-        self.doc_names = self.attchmnts.doc_names
+        self.doc_names = self.doc_kw_bs.doc_names
 
     def _init_doc_db(self):
         """Create knowledge base table if missing."""
@@ -66,7 +66,7 @@ class KnowledgeBase:
                 metadata        JSONB NOT NULL DEFAULT '{{}}'::jsonb
             );
             """
-        ).format(dimension=sql.SQL(str(int(self.emb_dmsion))))
+        ).format(dimension=sql.SQL(str(int(self.emb_dim))))
         self.cur.execute(create_kw_bs_tbl)
         # NOTE: 
         # - Expires_at and content_hash is only applicable for web search contents.
@@ -98,28 +98,12 @@ class KnowledgeBase:
         self.conn.commit()
 
     # ================================================
-    # EMBEDDING FILE CONTENT
-    # ================================================
-
-    def _embedding_content(self, cont: str) -> tuple[str, list[float]]:
-        """Generate embedding from given texts."""
-        try:
-            response = ollama.embed(model=self.emb_model, input=cont)
-            embeddings = response["embeddings"][0]
-            if not embeddings:
-                return "Error: Model failed to generate vector embedding", []
-            return cont, embeddings
-
-        except Exception as e:
-            return f"Error: {e}", []
-
-    # ================================================
     # LIST CONTENTS
     # ================================================
 
     def list_all_uploaded_documents(self) -> str:
         """Return a list of all document(s) in the database."""
-        rows = self.attchmnts.doc_metadata
+        rows = self.doc_kw_bs.doc_metadata
         if isinstance(rows, str):
             return rows
 
@@ -134,48 +118,6 @@ class KnowledgeBase:
             doc_name = data_dict.get("document_name", "Unknown")
             lines.append(f"{str(time)}\t{doc_name}")
         return "\n".join(lines)
-
-    # ==================================================
-    # QUERY KNOWNLEDGE BASE
-    # ==================================================
-
-    def query_similar_knowledge(self, qry: str) -> list[dict[str, Any]] | str:
-        """Queries knowledge base for similar content."""
-        kw_dict = []
-
-        qry, qry_embeddings = self._embedding_content(qry)
-        self.cur.execute(
-            """
-            SELECT content, metadata, 1 - (embedding <=> %s) AS cosine_similarity
-            FROM knowledge_base
-            ORDER BY embedding <=> %s ASC
-            LIMIT %s;
-            """,
-            (str(qry_embeddings), str(qry_embeddings), self.qry_limit)
-        )
-        rows = self.cur.fetchall()
-        for cont, metadata, score in rows:
-            data_dict = json.loads(metadata)
-            kw_dict.append({
-                "document_name": data_dict.get("document_name", "Unknown"),
-                "content": cont,
-                "similarity": score
-            })
-        return kw_dict if kw_dict else "Error: No content retrieved from knowledge base"
-
-    # ==================================================
-    # AUTO FUNCTIONS
-    # ==================================================
-
-    def toggle_auto_retrive_from_kw_bs(
-        self,
-        enable_auto_read_dropbox: bool,
-        prompt: str,
-    ) -> list[dict[str, Any]] | str | None:
-        """Auto fetches previous documents contents ability, return relevant contents if its toggled on."""
-        if enable_auto_read_dropbox:
-            kw_dict = self.query_similar_knowledge(prompt)
-        return
 
     # ==================================================
     # CLEAR CONTENTS

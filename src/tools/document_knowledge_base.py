@@ -18,7 +18,7 @@ from src.logger import get_logger
 logger = get_logger(__name__)
 
 
-class Document:
+class DocumentKnowledgeBase:
     def __init__(
         self,
         sess_name: str | None = None,
@@ -33,7 +33,7 @@ class Document:
         self.cur    = self.conn.cursor()
 
         self.sess_name = sess_name
-        self.emb_model = config.EMBED_MODEL
+        self.qry_limit  = config.RETRIEVE_MEM_ENTRY_LIMIT
 
         self.chat_logs  = ChatLogs(sess_name=self.sess_name)
         self.parsers    = Parsers()
@@ -179,7 +179,6 @@ class Document:
             doc_name=name, embeddings=embeddings, cont=cont, mime=mime, size=size, cont_hash=cont_hash
         )
 
-
     # ================================================
     # FROM DOCUMENTS IN KNOWLEDGE BASE
     # ================================================
@@ -213,8 +212,7 @@ class Document:
         # Unpack data in metadata
         doc_names = []
         for _, metadata in rows:
-            data_dict = json.loads(metadata) if isinstance(metadata, str) else metadata
-            doc_names.append(data_dict["document_name"])
+            doc_names.append(metadata["document_name"])
         return doc_names
 
     def get_attachments_content(
@@ -239,3 +237,46 @@ class Document:
             logger.info("Extracted attachment(s) content")
             attchmnt_dict[path] = cont
         return attchmnt_dict
+
+    # ==================================================
+    # QUERY KNOWNLEDGE BASE
+    # ==================================================
+
+    def query_similar_knowledge(self, qry: str) -> list[dict[str, Any]] | None:
+        """Queries knowledge base for similar content."""
+        kw_dict = []
+
+        qry, qry_embeddings = self.embed.embedding_content(qry)
+        self.cur.execute(
+            """
+            SELECT content, metadata, 1 - (embedding <=> %s) AS cosine_similarity
+            FROM knowledge_base
+            ORDER BY embedding <=> %s ASC
+            LIMIT %s;
+            """,
+            (str(qry_embeddings), str(qry_embeddings), self.qry_limit)
+        )
+
+        rows = self.cur.fetchall()
+        for cont, metadata, score in rows:
+            kw_dict.append({
+                "document_name": metadata.get("document_name", "Unknown"),
+                "content": cont,
+                "similarity": score
+            })
+        return kw_dict if kw_dict else None
+
+    # ==================================================
+    # AUTO FUNCTIONS
+    # ==================================================
+
+    def toggle_auto_retrieve_sess_docs(
+        self,
+        is_auto_doc_rtve: bool,
+        prompt: str,
+    ) -> list[dict[str, Any]] | None:
+        """Auto fetches previous documents contents ability, return relevant contents if its toggled on."""
+        if is_auto_doc_rtve:
+            return self.query_similar_knowledge(prompt)
+        return
+

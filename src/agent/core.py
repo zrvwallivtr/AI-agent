@@ -10,7 +10,7 @@ from src.agent.memory import Memory
 from src.agent.cmd_functions import Command
 from src.agent import format_context as fmt_cont
 #from src.tools.search import is_connected, SearchAgent
-from src.tools.documents import Document
+from src.tools.document_knowledge_base import DocumentKnowledgeBase
 from src.tools.knowledge_base import KnowledgeBase
 from src.logger import get_logger
 from src import config
@@ -62,14 +62,14 @@ class Agent:
         else:
             self.tokens = Tokens(model)
 
-        self.model          = model
-        self.sess_name      = sess_name
-        self.project        = project
-        self.chat_logs      = ChatLogs(sess_name=self.sess_name)
-        self.mem            = Memory(project=project)
-        self.kw_bs          = KnowledgeBase(sess_name=self.sess_name)
-        self.cmd            = Command(model=model, sess_name=self.sess_name, project=project)
-        self.doc            = Document(sess_name=self.sess_name)
+        self.model      = model
+        self.sess_name  = sess_name
+        self.project    = project
+        self.chat_logs  = ChatLogs(sess_name=self.sess_name)
+        self.mem        = Memory(project=project)
+        self.kw_bs      = KnowledgeBase(sess_name=self.sess_name)
+        self.cmd        = Command(model=model, sess_name=self.sess_name, project=project)
+        self.doc_kw_bs  = DocumentKnowledgeBase(sess_name=self.sess_name)
         # self.search_agent   = SearchAgent()
 
     @property
@@ -136,6 +136,7 @@ class Agent:
         self,
         prompt: str,
         is_auto_mem_rtve: bool = True,
+        is_auto_doc_rtve: bool = True,
         is_attchmnt: bool = False,
         paths: list[Path] | None = None
     ) -> None | str:
@@ -202,13 +203,18 @@ class Agent:
 
         # == FULL CONTEXT ======================================
 
-        # Auto retrieve memory
+        # Auto retrieve relevant memories
         mem_list = self.mem.toggle_auto_retrive_memory_entries(
             is_auto_mem_rtve=is_auto_mem_rtve, prompt=prompt
         )
 
+        # Auto retrieve relevant session documents
+        doc_list = self.doc_kw_bs.toggle_auto_retrieve_sess_docs(
+            is_auto_doc_rtve=is_auto_doc_rtve, prompt=prompt
+        )
+
         # Attachments (manual call by user)
-        attchmnt_dict = self.doc.get_attachments_content(
+        attchmnt_dict = self.doc_kw_bs.get_attachments_content(
             is_attchmnt=is_attchmnt, doc_paths=paths
         )
 
@@ -245,7 +251,7 @@ class Agent:
         # )
 
         cmbind_prompt = fmt_cont.build_prompt(
-            prompt=prompt, mem_list=mem_list, attchmnt_dict=attchmnt_dict
+            prompt=prompt, mem_list=mem_list, doc_list=doc_list, attchmnt_dict=attchmnt_dict
         )
         msgs.append({"role": "user", "content": cmbind_prompt})
 
@@ -275,7 +281,7 @@ class Agent:
 
         if attchmnt_dict:
             for doc_path, cont in attchmnt_dict.items():
-                notify = self.doc.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
+                notify = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
                 print(notify)
         return
         # // END HERE //

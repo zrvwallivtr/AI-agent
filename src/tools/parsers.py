@@ -26,7 +26,7 @@ class PathTraversalError(Exception):
     pass
 
 
-UPLOAD_DIR = Path(f"~/{config.APP_NAME}/uploads").expanduser().resolve()
+UPLOAD_DIR = Path(f"~/.{config.APP_NAME}/uploads").expanduser().resolve()
 
 def _validate_path(path: Path) -> Path:
     """Resolve 'path' to its real, absolute form."""

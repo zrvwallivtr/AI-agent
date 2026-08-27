@@ -7,7 +7,7 @@ from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
 from src.agent import format_context as fmt_cont
-from src.tools.documents import Document
+from src.tools.document_knowledge_base import DocumentKnowledgeBase
 # from src.tools.search import is_connected, SearchAgent
 from src import config
 from src.logger import get_logger
@@ -24,13 +24,13 @@ class Command:
         sess_name: str | None = None,
         project: str | None = None
     ):
-        self.model          = model
-        self.sess_name      = sess_name
-        self.project        = project
-        self.chat_logs      = ChatLogs(sess_name=self.sess_name)
-        self.mem            = Memory(project=self.project)
-        self.kw_bs          = KnowledgeBase(sess_name=self.sess_name)
-        self.doc            = Document(sess_name=self.sess_name)
+        self.model      = model
+        self.sess_name  = sess_name
+        self.project    = project
+        self.chat_logs  = ChatLogs(sess_name=self.sess_name)
+        self.mem        = Memory(project=self.project)
+        self.kw_bs      = KnowledgeBase(sess_name=self.sess_name)
+        self.doc_kw_bs  = DocumentKnowledgeBase(sess_name=self.sess_name)
         # self.search_agent   = SearchAgent()
 
     # ========================================================
@@ -59,7 +59,7 @@ class Command:
         # == FULL CONTEXT ==========================================
 
         # Attachments (manual call by user)
-        attchmnt_dict = self.doc.get_attachments_content(
+        attchmnt_dict = self.doc_kw_bs.get_attachments_content(
             is_attchmnt=is_attchmnt, doc_paths=paths
         )
 
@@ -103,7 +103,7 @@ class Command:
 
         if attchmnt_dict:
             for doc_path, cont in attchmnt_dict.items():
-                notify = self.doc.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
+                notify = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
                 print(notify)
         return
 
@@ -126,7 +126,7 @@ class Command:
         mem_list = self.mem.query_similar_content(prompt)
 
         # Attachments (manual call by user)
-        attchmnt_dict = self.doc.get_attachments_content(
+        attchmnt_dict = self.doc_kw_bs.get_attachments_content(
             is_attchmnt=is_attchmnt, doc_paths=paths
         )
 
@@ -158,7 +158,7 @@ class Command:
 
         if attchmnt_dict:
             for doc_path, cont in attchmnt_dict.items():
-                notify = self.kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
+                notify = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
                 print(notify)
         return
 
