@@ -5,6 +5,7 @@ from pathlib import Path
 from src.config.prompts import MEM_RECALL_INTERPRET_PROMPT
 from src.config.postgres import conn
 from src.agent.models.llm import LLM
+from src.agent.models.embed import Embed
 from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
@@ -31,15 +32,26 @@ class Command:
         self.project    = project
         self.chat_logs  = chat_logs
 
-        self.mem        = Memory(
-            conn=self.conn, chat_logs=self.chat_logs, project=self.project
+        self.embed      = Embed()
+
+        self.mem = Memory(
+            conn=self.conn,
+            chat_logs=self.chat_logs,
+            project=self.project
         )
-        self.kw_bs      = KnowledgeBase(
-            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
+
+        self.kw_bs = KnowledgeBase(
+            conn=self.conn,
+            chat_logs=self.chat_logs,
+            sess_name=self.sess_name
         )
-        self.doc_kw_bs  = DocumentKnowledgeBase(
-            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
+
+        self.doc_kw_bs = DocumentKnowledgeBase(
+            conn=self.conn,
+            chat_logs=self.chat_logs,
+            sess_name=self.sess_name
         )
+
         # self.search_agent   = SearchAgent()
 
 
@@ -56,7 +68,7 @@ class Command:
         """
         Extract key info from user prompt and attachments (optional),
         save extracted memory entries to database.
-        Note: User's question will be saved directly, this function
+        NOTE: User's question will be saved directly, this function
               will then generate a pre-written assistant message and
               saved.
         """
@@ -84,7 +96,7 @@ class Command:
         )
         if not response:
             return "Error: No data was extracted by the model."
-        created_ids, p_tkns, o_tkns = response
+        created_ids, p_tkns, o_tkns, emb_tkns = response
 
         # == PRINT TO TERMINAL ======================================
 
@@ -102,6 +114,10 @@ class Command:
             log.debug("User selected [u]: Undoing saved memory(s)")
             self.mem.delete_mem(created_ids)
             return "Entry deleted."
+
+        # /////////////////////////////////////////////////////
+        # Token usage for memory extraction: p_tkns, o_tkns
+        # /////////////////////////////////////////////////////
 
         # Save messages
         mock_resp = "Important information(s) has been extracted added to database."
@@ -123,8 +139,11 @@ class Command:
                 self.sess_name
             )
             for doc_path, cont in attchmnt_dict.items():
-                notify = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
+                notify, tkn_used = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
                 print(notify)
+                # /////////////////////////////////////////////
+                # Embedding token count: emb_tkns + tkn_used
+                # /////////////////////////////////////////////
         return
 
 
@@ -144,7 +163,8 @@ class Command:
         # === FULL CONTEXT ==========================================
 
         # Retrieve memory(s)
-        mem_list = self.mem.query_similar_content(prompt)
+        prompt, prompt_embeddings, emb_tkns = self.embed.embedding_content(prompt)
+        mem_list = self.mem.query_similar_content(prompt, prompt_embeddings)
 
         # Attachments (manual call by user)
         attchmnt_dict = self.doc_kw_bs.get_attachments_content(
@@ -165,6 +185,10 @@ class Command:
             context=messages
         )
 
+        # ///////////////////////////////////////////////////////////////////
+        # Token usage for answering from recalled entries: p_tkns, o_tkns
+        # ///////////////////////////////////////////////////////////////////
+
         # Save messages
         self.chat_logs.add_conv_turn(
             prompt=prompt,
@@ -184,8 +208,11 @@ class Command:
                 self.sess_name
             )
             for doc_path, cont in attchmnt_dict.items():
-                notify = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
+                notify, tkn_used = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
                 print(notify)
+                # /////////////////////////////////////////////
+                # Embedding token count: emb_tkns + tkn_used
+                # /////////////////////////////////////////////
         return
 
 

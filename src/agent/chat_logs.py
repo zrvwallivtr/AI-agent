@@ -55,15 +55,15 @@ class ChatLogs:
         self.cur.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_logs (
-                id              BIGSERIAL PRIMARY KEY,
-                session_id      UUID NOT NULL REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
-                created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                prompt          TEXT NOT NULL,
-                response        TEXT NOT NULL,
-                state           VARCHAR(20) NOT NULL CHECK (state IN ('external', 'internal')),
-                -- prompt_tokens   INTEGER,
-                -- output_tokens   INTEGER,
-                metadata        JSONB DEFAULT '{}'::jsonb
+                id                  BIGSERIAL PRIMARY KEY,
+                session_id          UUID NOT NULL REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
+                created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                prompt              TEXT NOT NULL,
+                response            TEXT NOT NULL,
+                state               VARCHAR(20) NOT NULL CHECK (state IN ('external', 'internal')),
+                total_prompt_tokens INTEGER NOT NULL,
+                total_output_tokens INTEGER NOT NULL,
+                metadata            JSONB DEFAULT '{}'::jsonb
             );
             """
         )
@@ -198,12 +198,13 @@ class ChatLogs:
         - 'external': User/model interactions.
         """
         metadata = self._tool_calls_metadata(attchmnts, qry_wth_urls)
+
         self.cur.execute(
             """
-            INSERT INTO chat_logs (session_id, prompt, response, state, metadata)
-            VALUES (%s, %s, %s, %s, %s);
+            INSERT INTO chat_logs (session_id, prompt, response, state, total_prompt_tokens, total_output_tokens, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s);
             """,
-            (self.sess_id, prompt, response, state, json.dumps(metadata or {}))
+            (self.sess_id, prompt, response, state, p_tkns, o_tkns, json.dumps(metadata or {}))
         )
         self.conn.commit()
         log.info("New conversation turn added to session '%s' chat logs", self.sess_name)

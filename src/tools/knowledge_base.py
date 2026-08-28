@@ -65,6 +65,7 @@ class KnowledgeBase:
                 expires_at      TIMESTAMPTZ,    -- Only applicable for web search contents
                 type            VARCHAR(20) NOT NULL,
                 embedding       VECTOR({dimension}),
+                prompt_tokens   INTEGER NOT NULL,
                 content         TEXT NOT NULL,
                 content_hash    TEXT,   -- Only applicable for web search contents
                 metadata        JSONB NOT NULL DEFAULT '{{}}'::jsonb

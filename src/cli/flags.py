@@ -13,27 +13,125 @@ from src.cli.flag_functions import General, Session, File
 def main():
     parser = argparse.ArgumentParser(prog="agent", description="AI Agent")
 
-    # General
-    parser.add_argument("question",                 nargs="?",              help="Ask questions")
-    parser.add_argument("--model", "-m",            default=MODEL,   metavar=("MODEL_NAME"),                     help=f"Select model (defualt: {MODEL})")
-    parser.add_argument("--reset-default", "-rd",   action="store_true",    help="Reset default session")
-    parser.add_argument("--installed-models", "-i", action="store_true",    help="List all installed ollama models")
+    # === GENERAL ===================================================================
 
-    # Session flags
-    parser.add_argument("--session", "-s",          default=None,           metavar=("SESSION_NAME"),                   help="Continue a selected session")
-    parser.add_argument("--list-session", "-ls",    action="store_true",                                                help="List all existing session")
-    parser.add_argument("--new-session", "-ns",     default=None,           metavar=("SESSION_NAME"),                   help="Create a new session")
-    parser.add_argument("--delete-session", "-d",   default=None,           metavar=("SESSION_NAME"),                   help="Delete a selected session")
+    parser.add_argument(
+        "question",
+        nargs="?",
+        help="Ask questions"
+    )
 
-    # Read attachments
-    parser.add_argument("--file", "-f",         nargs="+",      type=Path,     default=None,    metavar=("FILE_PATH"),      help="Read selected file")
-    parser.add_argument("--list-files", "-lf",   action="store_true",                                                        help="List all files in dropbox")
+    parser.add_argument(
+        "--model",
+        "-m",
+        default=MODEL,
+        metavar=("MODEL_NAME"),
+        help=f"Select model (defualt: {MODEL})"
+    )
 
-    # Project manager
-    # parser.add_argument("--project-summary", "-ps",     nargs=3,        metavar=("PROJECT_NAME", "SESSION_NAME", "TEXT"),       help="Edit project tasklist")
-    # parser.add_argument("--project-task", "-pt",        nargs=2,        metavar=("PROJECT_NAME", "SESSION_NAME"),               help="Edit project decisions")
-    # parser.add_argument("--project-dec", "-pd",         nargs=3,        metavar=("PROJECT_NAME", "SESSION_NAME", "TEXT"),       help="Edit project milestone")
-    # parser.add_argument("--new-project", "-np",         default=None,   metavar=("PROJECT_NAME"),                               help="Create new project directory containing all the required files")
+    parser.add_argument(
+        "--reset-default",
+        "-rd",
+        action="store_true",
+        help="Reset default session"
+    )
+
+    parser.add_argument(
+        "--installed-models",
+        "-i",
+        action="store_true",
+        help="List all installed ollama models"
+    )
+
+    # === SESSION FLAGS =============================================================
+
+    parser.add_argument(
+        "--session",
+        "-s",
+        default=None,
+        metavar=("SESSION_NAME"),
+        help="Continue a selected session"
+    )
+
+    parser.add_argument(
+        "--list-session",
+        "-ls",
+        action="store_true",
+        help="List all existing session"
+    )
+
+    parser.add_argument(
+        "--new-session",
+        "-ns",
+        default=None,
+        metavar=("SESSION_NAME"),
+        help="Create a new session"
+    )
+
+    parser.add_argument(
+        "--delete-session",
+        "-d",
+        default=None,
+        metavar=("SESSION_NAME"),
+        help="Delete a selected session"
+    )
+
+    # === READ ATTACHMENTS ==========================================================
+
+    parser.add_argument(
+        "--file",
+        "-f",
+        nargs="+",
+        type=Path,
+        default=None,
+        metavar=("FILE_PATH"),
+        help="Read selected file"
+    )
+
+    parser.add_argument(
+        "--list-files",
+        "-lf",
+        action="store_true",
+        help="List all files in dropbox"
+    )
+
+    # === PROJECT MANAGER ===========================================================
+
+    parser.add_argument(
+        "--project-summary",
+        "-ps",
+        nargs=3,
+        metavar=("PROJECT_NAME", "SESSION_NAME", "TEXT"),
+        help="Edit project tasklist"
+    )
+
+    parser.add_argument(
+        "--project-task",
+        "-pt",
+        nargs=2,
+        metavar=("PROJECT_NAME", "SESSION_NAME"),
+        help="Edit project decisions"
+    )
+
+    parser.add_argument(
+        "--project-dec",
+        "-pd",
+        nargs=3,
+        metavar=("PROJECT_NAME", "SESSION_NAME", "TEXT"),
+        help="Edit project milestone"
+    )
+
+    parser.add_argument(
+        "--new-project",
+        "-np",
+        default=None,
+        metavar=("PROJECT_NAME"),
+        help="Create new project directory containing all the required files"
+    )
+
+    # =================================================================
+    # IMPORT CLASSES
+    # =================================================================
 
     args = parser.parse_args()
 
@@ -44,7 +142,7 @@ def main():
     doc_kw_bs   = DocumentKnowledgeBase(conn=conn, chat_logs=chat_logs, sess_name=args.session)
 
     # =================================================================
-    # Delete
+    # DELETE
     # =================================================================
 
     if args.reset_default:
@@ -52,7 +150,7 @@ def main():
         return True
 
     # =================================================================
-    # List installed models
+    # LIST INSTALLED MODELS
     # =================================================================
 
     if args.installed_models:
@@ -60,7 +158,7 @@ def main():
         return
 
     # =================================================================
-    # Session
+    # SESSION
     # =================================================================
 
     if args.new_session:
@@ -80,7 +178,7 @@ def main():
         return
 
     # =================================================================
-    # Read
+    # READ
     # =================================================================
 
     if args.file:
@@ -99,9 +197,10 @@ def main():
 
     if args.list_files:
         print(doc_kw_bs.list_all_uploaded_documents())
+        return
 
     # =================================================================
-    # Project
+    # PROJECT
     # =================================================================
 
     # if args.new_project:
@@ -128,7 +227,7 @@ def main():
     #     return
 
     # =================================================================
-    # When question is asked
+    # WHEN QUESTION IS ASKED
     #
     # agent -s SESSION_NAME -m MODEL_NAME PROMPT
     # =================================================================
@@ -141,7 +240,7 @@ def main():
         )
 
     # =================================================================
-    # Help
+    # HELP
     # =================================================================
 
     action_flags = [args.file]

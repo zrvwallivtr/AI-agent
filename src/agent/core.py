@@ -6,6 +6,7 @@ from pathlib import Path
 from src.config.models import MODEL, MODEL_MAX_TOKENS
 from src.config.postgres import conn
 from src.agent.models.llm import LLM
+from src.agent.models.embed import Embed
 from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
@@ -66,19 +67,36 @@ class Agent:
         self.sess_name  = sess_name
         self.project    = project
 
-        self.chat_logs  = ChatLogs(conn=self.conn, sess_name=self.sess_name)
-        self.mem        = Memory(
-            conn=self.conn, chat_logs=self.chat_logs, project=project
+        self.embed = Embed()
+
+        self.chat_logs = ChatLogs(conn=self.conn, sess_name=self.sess_name)
+
+        self.mem = Memory(
+            conn=self.conn,
+            chat_logs=self.chat_logs,
+            project=project
         )
-        self.kw_bs      = KnowledgeBase(
-            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
+
+        self.kw_bs = KnowledgeBase(
+            conn=self.conn,
+            chat_logs=self.chat_logs,
+            sess_name=self.sess_name
         )
-        self.cmd        = Command(
-            conn=self.conn, chat_logs=self.chat_logs, model=model, sess_name=self.sess_name, project=project
+
+        self.cmd = Command(
+            conn=self.conn,
+            chat_logs=self.chat_logs,
+            model=model,
+            sess_name=self.sess_name,
+            project=project
         )
-        self.doc_kw_bs  = DocumentKnowledgeBase(
-            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
+
+        self.doc_kw_bs = DocumentKnowledgeBase(
+            conn=self.conn,
+            chat_logs=self.chat_logs,
+            sess_name=self.sess_name
         )
+
         # self.search_agent   = SearchAgent()
 
 
@@ -214,14 +232,20 @@ class Agent:
 
         # === FULL CONTEXT ======================================
 
+        prompt, prompt_embeddings, prompt_tkns = self.embed.embedding_content(prompt)
+
         # Auto retrieve relevant memories
         mem_list = self.mem.toggle_auto_retrive_memory_entries(
-            is_auto_mem_rtve=is_auto_mem_rtve, prompt=prompt
+            is_auto_mem_rtve=is_auto_mem_rtve,
+            prompt=prompt,
+            prompt_embeddings=prompt_embeddings
         )
 
         # Auto retrieve relevant session documents
         doc_list = self.doc_kw_bs.toggle_auto_retrieve_sess_docs(
-            is_auto_doc_rtve=is_auto_doc_rtve, prompt=prompt
+            is_auto_doc_rtve=is_auto_doc_rtve,
+            prompt=prompt,
+            prompt_embeddings=prompt_embeddings
         )
 
         # Attachments (manual call by user)
@@ -231,6 +255,7 @@ class Agent:
 
         # Auto web search
 
+        # All context combined
         cmbind_prompt = fmt_cont.build_prompt(
             prompt=prompt, mem_list=mem_list, doc_list=doc_list, attchmnt_dict=attchmnt_dict
         )
@@ -242,13 +267,18 @@ class Agent:
         response, p_tkns, o_tkns = LLM.model_response(
             msgs=msgs, model=self.model
         )
+
+        # Calculate total tokens
+        total_p_tkns = prompt_tkns + p_tkns
+        total_o_tkns = o_tkns
+
         self.chat_logs.add_conv_turn(
             prompt=prompt,
             response=response,
             state="external",
             attchmnts=paths,
-            p_tkns=p_tkns,
-            o_tkns=o_tkns
+            p_tkns=total_p_tkns,
+            o_tkns=total_o_tkns
         )
 
         # === STORE MEMORY(S) ===================================
@@ -268,7 +298,7 @@ class Agent:
                 self.sess_name
             )
             for doc_path, cont in attchmnt_dict.items():
-                notify = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
+                notify, _ = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
                 print(notify)
         return
         # // END HERE //

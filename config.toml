@@ -25,6 +25,7 @@ enable_auto_memory_store                    = true
 [file_reader]
 auto_read_dropbox_enable_at_model_tokens    = 128000
 enable_auto_read_dropbox                    = true
+enable_docling                              = true
 docling_default                             = true
 
 [search]

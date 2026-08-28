@@ -132,6 +132,7 @@ class DocumentKnowledgeBase:
         self,
         doc_name: str,
         embeddings: list[float],
+        cont_tkns: int,
         cont: str,
         mime: str,
         size: int,
@@ -148,13 +149,14 @@ class DocumentKnowledgeBase:
         try:
             self.cur.execute(
                 """
-                INSERT INTO knowledge_base (session_id, type, embedding, content, content_hash, expires_at, metadata)
-                VALUES (%s, %s, %s::vector, %s, %s, %s, %s)
+                INSERT INTO knowledge_base (session_id, type, embedding, prompt_tokens, content, content_hash, expires_at, metadata)
+                VALUES (%s, %s, %s::vector, %s, %s, %s, %s, %s)
                 """,
                 (
                     self.chat_logs.sess_id,
                     "document",
                     str(embeddings),
+                    cont_tkns,
                     cont,
                     cont_hash,
                     exprs_at,
@@ -171,7 +173,7 @@ class DocumentKnowledgeBase:
             return f"Database insert error: {e}"
 
 
-    def embed_txt_and_add_doc_to_kw_bs(self, path: Path, cont: str) -> str:
+    def embed_txt_and_add_doc_to_kw_bs(self, path: Path, cont: str) -> tuple[str, int]:
         """Embed text document(s) and upload to knowledge base."""
         doc_data = self.get_document_metadata_from_path(path)
         if not doc_data:
@@ -180,7 +182,7 @@ class DocumentKnowledgeBase:
                 path.name,
                 UPLOAD_DIR
             )
-            return f"Error reading '{path}': Path does not exist"
+            return f"Error reading '{path}': Path does not exist", 0
 
         # Hash raw content before embedding and check duplicates
         cont_hash = self._hash_content(cont)
@@ -189,33 +191,33 @@ class DocumentKnowledgeBase:
                 "Document already exists in session '%s' knowledge base. Skipping re-embed",
                 self.sess_name
             )
-            return "Document already in knowledge base. Skipping re-embed"
+            return "Document already in knowledge base. Skipping re-embed", 0
 
         # Embed content
-        cont, embeddings = self.embed.embedding_content(cont)
+        cont, embeddings, cont_tkns = self.embed.embedding_content(cont)
         if not embeddings:
             log.warning(
                 "Unable to save document to session '%s' knowledge base: Failed to generate vector embedding for '%s'",
                 self.sess_name,
                 path.name
             )
-            return f"Unable to save document to session '{self.sess_name}' knowledge base: Failed to generate vector embedding"
+            return f"Unable to save document to session '{self.sess_name}' knowledge base: Failed to generate vector embedding", 0
 
         # Add embeddings to database
         name, mime, size = doc_data
         return self._add_document_to_kw_bs(
-            doc_name=name, embeddings=embeddings, cont=cont, mime=mime, size=size, cont_hash=cont_hash
-        )
+            doc_name=name, embeddings=embeddings, cont_tkns=cont_tkns, cont=cont, mime=mime, size=size, cont_hash=cont_hash
+        ), cont_tkns
 
 
-    def embed_and_add_doc_to_kw_bs(self, path: Path) -> str:
+    def embed_and_add_doc_to_kw_bs(self, path: Path) -> tuple[str, int]:
         """Embed document(s) and upload to knowledge base."""
         doc_data = self.get_document_metadata_from_path(path)
         if not doc_data:
             log.warning(
                 "Failed to read '%s': File does not exists in %s", path.name, UPLOAD_DIR
             )
-            return f"Error reading '{path}': Path does not exist"
+            return f"Error reading '{path}': Path does not exist", 0
 
         # Read with correct parsers
         cont = self.doc_reader.read_document(path)
@@ -227,23 +229,23 @@ class DocumentKnowledgeBase:
                 "Document already exists in session '%s' knowledge base. Skipping re-embed",
                 self.sess_name
             )
-            return "Document already in knowledge base. Skipping re-embed"
+            return "Document already in knowledge base. Skipping re-embed", 0
 
         # Embed content
-        cont, embeddings = self.embed.embedding_content(cont)
+        cont, embeddings, cont_tkns = self.embed.embedding_content(cont)
         if not embeddings:
             log.warning(
                 "Unable to save document to session '%s' knowledge base: Failed to generate vector embedding for '%s'",
                 self.sess_name,
                 path.name
             )
-            return f"Unable to save document to session '{self.sess_name}' knowledge base: Failed to generate vector embedding"
+            return f"Unable to save document to session '{self.sess_name}' knowledge base: Failed to generate vector embedding", 0
 
         # Add embeddings to database
         name, mime, size = doc_data
         return self._add_document_to_kw_bs(
-            doc_name=name, embeddings=embeddings, cont=cont, mime=mime, size=size, cont_hash=cont_hash
-        )
+            doc_name=name, embeddings=embeddings, cont_tkns=cont_tkns, cont=cont, mime=mime, size=size, cont_hash=cont_hash
+        ), cont_tkns
 
 
     # ================================================
@@ -317,11 +319,10 @@ class DocumentKnowledgeBase:
     # QUERY KNOWNLEDGE BASE
     # ==================================================
 
-    def query_similar_knowledge(self, qry: str) -> list[dict[str, Any]] | None:
+    def query_similar_knowledge(self, qry: str, qry_embeddings: list[float]) -> list[dict[str, Any]] | None:
         """Queries knowledge base for similar content."""
         kw_dict = []
 
-        qry, qry_embeddings = self.embed.embedding_content(qry)
         self.cur.execute(
             """
             SELECT content, metadata, 1 - (embedding <=> %s) AS cosine_similarity
@@ -333,8 +334,6 @@ class DocumentKnowledgeBase:
         )
         rows = self.cur.fetchall()
 
-        # ////////////////////////////////////////////////////
-        # CURRENTLY ONLY FOR DOCUMENT KNOWLEDGE BASE
         if kw_dict:
             for cont, metadata, score in rows:
                 kw_dict.append({
@@ -346,7 +345,6 @@ class DocumentKnowledgeBase:
             return kw_dict
         else:
             return
-        # ////////////////////////////////////////////////////
 
 
     # ==================================================
@@ -357,6 +355,7 @@ class DocumentKnowledgeBase:
         self,
         is_auto_doc_rtve: bool,
         prompt: str,
+        prompt_embeddings: list[float]
     ) -> list[dict[str, Any]] | None:
         """Auto fetches previous documents contents ability, return relevant contents if its toggled on."""
         if is_auto_doc_rtve:
@@ -364,5 +363,5 @@ class DocumentKnowledgeBase:
                 "Auto document retrieve on. Querying session '%s' knowledge_base for relevant documents",
                 self.sess_name
             )
-            return self.query_similar_knowledge(prompt)
+            return self.query_similar_knowledge(prompt, prompt_embeddings)
         return

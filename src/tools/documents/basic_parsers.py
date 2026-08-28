@@ -52,7 +52,9 @@ class BasicParsers:
             # Text documents
             ".pdf": self._read_pdf,
             ".docx": self._read_docx,
+            # xlsx, pptx
             ".epub": self._read_epub,
+            # odt, ods, odp
             
             # Programming
             ".py": self._read_code,

@@ -17,28 +17,12 @@ class DoclingParsers:
             # Data & configuration formats
             ".csv": self._read_csv,
             ".xlsx": self._read_xlsx,
-            ".yaml": self._read_yaml,
-            ".yml": self._read_yml,
-            ".toml": self._read_toml,
             ".xml": self._read_xml,
             
             # Text documents
             ".pdf": self._read_pdf,
             ".docx": self._read_docx,
             ".epub": self._read_epub,
-            
-            # Programming
-            ".py": self._read_code,
-            ".js": self._read_code,
-            ".ts": self._read_code,
-            ".tsx": self._read_code,
-            ".json": self._read_code,
-            ".md": self._read_code,
-            ".sh": self._read_code,
-            ".html": self._read_code,
-            ".css": self._read_code,
-            ".rs": self._read_code,
-            ".go": self._read_code,
         }
 
         self.converter = DocumentConverter()
@@ -68,18 +52,6 @@ class DoclingParsers:
         return self._docling(path)
 
 
-    def _read_yaml(self, path: Path) -> str:
-        return self._docling(path)
-
-
-    def _read_yml(self, path: Path) -> str:
-        return self._docling(path)
-
-
-    def _read_toml(self, path: Path) -> str:
-        return self._docling(path)
-
-
     def _read_xml(self, path: Path) -> str:
         return self._docling(path)
 
@@ -97,12 +69,4 @@ class DoclingParsers:
 
 
     def _read_epub(self, path: Path) -> str:
-        return self._docling(path)
-
-
-    # =======================================================
-    # PROGRAMMING
-    # =======================================================
-
-    def _read_code(self, path: Path) -> str:
         return self._docling(path)
