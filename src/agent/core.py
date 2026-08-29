@@ -145,7 +145,7 @@ class Agent:
         to free up token space.
         """
         reserve                     = 1000 # (tokens)
-        current_history_tokens      = self.tokens.count_history_tokens(self.chat_logs.get_entire_conv())
+        current_history_tokens      = self.tokens.count_history_tokens(self.chat_logs.actv_convs)
         estimate_next               = current_history_tokens + (len(prompt) // 4)
 
         # if self.tokens.model_max_tokens - estimate_next -reserve < 0:
@@ -177,7 +177,7 @@ class Agent:
         - Only the user question and LLM response will be
           stored into chat history.
         """
-        msgs = self.chat_logs.get_entire_conv()
+        msgs = self.chat_logs.actv_convs
 
         cmd, user_prompt = _detect_cmd(prompt)
 
@@ -205,6 +205,17 @@ class Agent:
                     prompt=user_prompt,
                     is_attchmnt=is_attchmnt,
                     paths=paths
+                )
+                if response:
+                    print(response)
+                return
+                # // END HERE //
+
+            if cmd == "/compress":
+                app_log.debug("'/compress' command triggered")
+                msgs.append({"role": "user", "content": user_prompt})
+                response = self.cmd.cmd_compress(
+                    prompt=user_prompt
                 )
                 if response:
                     print(response)

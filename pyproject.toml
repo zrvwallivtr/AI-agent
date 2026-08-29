@@ -19,6 +19,7 @@ dependencies = [
   "docling>=2.120.1",
   "psycopg2>=2.9.12",
   "dotenv>=0.9.9",
+  "tokenizers>=0.22.2",
 ]
 
 [project.scripts]

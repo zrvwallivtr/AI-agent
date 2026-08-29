@@ -56,7 +56,7 @@ class Command:
 
 
     # ========================================================
-    # Memory
+    # MEMORY
     # ========================================================
 
     def cmd_memorise(
@@ -76,7 +76,7 @@ class Command:
             app_log.warning("Command '/memorise' aborted: No prompt was provided")
             return "Please specify what to memorize."
 
-        msgs = self.chat_logs.get_entire_conv()
+        msgs = self.chat_logs.actv_convs
 
         # === FULL CONTEXT ==========================================
 
@@ -159,7 +159,7 @@ class Command:
             app_log.warning("Command '/recall' aborted: No prompt was provided")
             return "Please specify what to recall."
 
-        msgs = self.chat_logs.get_entire_conv()
+        msgs = self.chat_logs.actv_convs
 
         # === FULL CONTEXT ==========================================
 
@@ -218,7 +218,23 @@ class Command:
 
 
     # ========================================================
-    # Search
+    # COMPRESS
+    # ========================================================
+
+    def cmd_compress(
+        self,
+        prompt: str,
+    ) -> str | None:
+        """Retrieve and print relevant entries according to user prompt."""
+        if not prompt:
+            app_log.warning("Command '/compress' aborted: No prompt was provided")
+            return "Please specify compression instructions."
+
+        self.chat_logs.compress_active_conv(prompt)
+        return
+
+    # ========================================================
+    # SEARCH
     # ========================================================
 
     # def cmd_search(

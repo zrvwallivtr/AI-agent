@@ -1,5 +1,6 @@
 agent
 cli
+config
 main
 prompts
 tools

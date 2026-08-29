@@ -56,6 +56,7 @@ dependencies = [
     { name = "python-docx" },
     { name = "rich" },
     { name = "tiktoken" },
+    { name = "tokenizers" },
 ]
 
 [package.metadata]
@@ -72,6 +73,7 @@ requires-dist = [
     { name = "python-docx", specifier = ">=1.2.0" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "tiktoken", specifier = ">=0.14.0" },
+    { name = "tokenizers", specifier = ">=0.22.2" },
 ]
 
 [[package]]

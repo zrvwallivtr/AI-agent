@@ -1,13 +1,17 @@
-import tiktoken
+from tokenizers import Tokenizer
 
 from src import models_database
+from src.logger import app_logger
+
+
+app_log = app_logger(__name__)
 
 
 class Tokens:
     def __init__(self, model: str, model_max_tokens: int | None = None):
         self.model = model
 
-        # === MAX TOKENS ====================
+        # === SET MODEL MAX TOKENS ====================================
 
         # User specified max tokens
         if model_max_tokens is not None:
@@ -24,19 +28,21 @@ class Tokens:
                 f"Add it to MODEL_MAX or set chat_max tokens in config.toml."
             )
 
-        # === ENCODER =======================
+        # === ENCODER =================================================
 
         try:
-            # Looks up exact token vocabulary mapped to specific model name
-            self.encoder = tiktoken.encoding_for_model(self.model)
-            # logger.info("Loaded exact token encoding for model: %s", self.model)
-        except KeyError:
-            # If unknown, fall back to 'cl100k_base'
-            self.encoder = tiktoken.get_encoding("cl100k_base")
-            # logger.warning(
-            #     "Exact token encoding not found for model '%s'. Falling back to 'cl100k_base'",
-            #     self.model
-            # )
+            # Exact token vocabulary mapped to specific model name
+            self.tokenizer = Tokenizer.from_pretrained(self.model)
+            app_log.debug("Loaded exact token encoding for model: %s", self.model)
+
+        except Exception as e:
+            # Fall back to a common general-purpose tokenizer
+            self.tokenizer = Tokenizer.from_pretrained("bert-base-uncased")
+            app_log.debug(
+                "Exact token encoding not found for model '%s': %s. Falling back to 'bert-base-uncased'",
+                self.model,
+                e
+            )
 
 
     def estimate(self, text: str) -> int:

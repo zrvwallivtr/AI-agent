@@ -112,27 +112,25 @@ class LLM:
     def response_with_new_sys_prompt_and_context(
         model: str,
         system_prompt: str,
-        prompt: str,
+        prompt: str | None,
         context: list[dict] | None = None
     ) -> tuple[str, int, int]:
         """Combines a system prompt, context and question with model response."""
+        usr_prompt = [LLM.user(prompt)] if prompt else []
+
         if context:
             context_without_system_prompt = [msg for msg in context if msg["role"] != "system"]
-            msgs = (
-                [LLM.system(system_prompt)]
-                + context_without_system_prompt
-                + [LLM.user(prompt)]
-            )
+            msgs = [LLM.system(system_prompt)] + context_without_system_prompt + usr_prompt
         else:
-            msgs = [LLM.system(system_prompt)] + [LLM.user(prompt)]
+            msgs = [LLM.system(system_prompt)] + usr_prompt
 
         prompt_log.info(system_prompt)
         prompt_log.info(msgs[-1].get("content", ""))
 
         response = ollama.chat(model=model, messages=msgs)
         content = response.message.content
-        p_tkns = getattr(response, "prompt_eval_cound", 0) or 0
-        o_tkns = getattr(response, "eval_cound", 0) or 0
+        p_tkns = getattr(response, "prompt_eval_count", 0) or 0
+        o_tkns = getattr(response, "eval_count", 0) or 0
         return content, p_tkns, o_tkns
 
 

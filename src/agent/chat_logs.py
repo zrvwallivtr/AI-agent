@@ -5,8 +5,11 @@ import uuid
 from pathlib import Path
 from typing import Literal, Any
 
+from src.config.models import MODEL
 from src.config.prompts import SYS_PROMPT, COMPRESS_PROMPT
 from src.config.postgres import conn
+from src.agent.models.llm import LLM
+from src.agent.format_context import build_prompt
 from src.logger import app_logger
 
 
@@ -18,6 +21,7 @@ class ChatLogs:
         self.conn = conn
         self.cur = self.conn.cursor()
 
+        self.model      = MODEL
         self.sys_prompt = SYS_PROMPT
         self.cmp_prompt = COMPRESS_PROMPT
 
@@ -25,7 +29,10 @@ class ChatLogs:
 
         self._init_chat_logs_db()
         self.sess_id        = self._get_or_create_sess_id()
-        self.convs          = self.get_entire_conv()
+        self.actv_convs     = self._get_entire_conv_with_sys_prompt()
+        self.curr_convs     = self.get_chat_history("not_compressed")
+        self.achived_convs  = self.get_chat_history("compressed")
+        self.all_convs      = self.get_chat_history("all")
 
 
     # =============================================================
@@ -63,6 +70,7 @@ class ChatLogs:
                 state               VARCHAR(20) NOT NULL CHECK (state IN ('external', 'internal')),
                 total_prompt_tokens INTEGER NOT NULL,
                 total_output_tokens INTEGER NOT NULL,
+                is_compressed       BOOL NOT NULL DEFAULT FALSE,
                 metadata            JSONB DEFAULT '{}'::jsonb
             );
             """
@@ -210,7 +218,7 @@ class ChatLogs:
         app_log.info("New conversation turn added to session '%s' chat logs", self.sess_name)
 
         # Resync messages
-        self.convs = self.get_entire_conv()
+        self.actv_convs = self._get_entire_conv_with_sys_prompt()
         app_log.debug("Resynced session '%s' conversations", self.sess_name)
 
 
@@ -234,7 +242,7 @@ class ChatLogs:
             return f"Failed to clear chat logs: Session '{self.sess_name}' does not exists or has no chat logs", False
         app_log.info("Cleared session '%s' chat logs", self.sess_name)
 
-        self.convs = self.get_entire_conv() # resync messages
+        self.actv_convs = self._get_entire_conv_with_sys_prompt() # resync messages
         app_log.debug("Resynced session '%s' conversations", self.sess_name)
         return f"Cleared session '{self.sess_name}' chat logs", True
 
@@ -243,9 +251,9 @@ class ChatLogs:
     # FROM CHAT LOGS
     # =============================================================
 
-    def get_entire_conv(self) -> list[dict]:
+    def _get_entire_conv_with_sys_prompt(self) -> list[dict]:
         """
-        Get all messages in a session. 
+        Get all messages in a session with filter options.
         If session does not exists, return system prompt.
         """
         sys_prompt = [{"role": "system", "content": self.sys_prompt}]
@@ -254,7 +262,7 @@ class ChatLogs:
             """
             SELECT prompt, response
             FROM chat_logs
-            WHERE session_id = %s
+            WHERE session_id = %s AND state = 'external' AND is_compressed = FALSE
             ORDER BY created_at ASC;
             """,
             (self.sess_id,)
@@ -273,11 +281,66 @@ class ChatLogs:
                 self.sess_name
             )
             return sys_prompt + convs
+
         app_log.debug(
             "Session '%s' conversation does not exists. Returning system prompt only",
             self.sess_name
         )
         return sys_prompt
+
+
+    def get_chat_history(self, filter: Literal["compressed", "not_compressed", "all"]) -> list[dict] | None:
+        """
+        Get all messages in a session with filter options.
+        If session does not exists, return system prompt.
+        """
+        if filter == "compressed":
+            self.cur.execute(
+                """
+                SELECT prompt, response
+                FROM chat_logs
+                WHERE session_id = %s AND state = 'external' AND is_compressed = TRUE
+                ORDER BY created_at ASC;
+                """,
+                (self.sess_id,)
+            )
+        elif filter == "not_compressed":
+            self.cur.execute(
+                """
+                SELECT prompt, response
+                FROM chat_logs
+                WHERE session_id = %s AND state = 'external' AND is_compressed = FALSE
+                ORDER BY created_at ASC;
+                """,
+                (self.sess_id,)
+            )
+        else:
+            self.cur.execute(
+                """
+                SELECT prompt, response
+                FROM chat_logs
+                WHERE session_id = %s AND state = 'external'
+                ORDER BY created_at ASC;
+                """,
+                (self.sess_id,)
+            )
+
+        self.conn.commit()
+        rows = self.cur.fetchall()
+
+        if rows:
+            convs = []
+            for row in rows:
+                convs.append({"role": "user", "content": row[0]})
+                convs.append({"role": "assistant", "content": row[1]})
+            app_log.debug(
+                "%d conversation turns retrieved from session '%s'",
+                len(rows),
+                self.sess_name
+            )
+            return convs
+
+        return None
 
 
     def get_latest_conv_turn(self) -> list[dict] | None:
@@ -286,12 +349,13 @@ class ChatLogs:
             """
             SELECT prompt, response
             FROM chat_logs
-            WHERE session_id = %s AND state = 'external'
+            WHERE session_id = %s AND state = 'external' AND is_compressed = FALSE
             ORDER BY created_at DESC
             LIMIT 1;
             """,
             (self.sess_id,)
         )
+
         self.conn.commit()
         row = self.cur.fetchone()
 
@@ -430,6 +494,48 @@ class ChatLogs:
         if qry_wth_urls:
             tool_entries["web_search"] = self._web_search_metadata(qry_wth_urls)
         return tool_entries
+
+
+    # =============================================================
+    # CHAT COMPRESSION
+    # =============================================================
+
+    def compress_active_conv(self, prompt: str):
+        """Call model to summarise all conversations where 'is_compressed' = FALSE in the database."""
+        cmbind_prompt = build_prompt(
+            prompt=prompt, cmp_convs=self.curr_convs
+        )
+
+        smry, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
+            model=self.model, system_prompt=self.cmp_prompt, prompt=cmbind_prompt,
+        )
+
+        # Update is compress status for previous conversations
+        self.cur.execute(
+            """
+            UPDATE chat_logs
+            SET is_compressed = TRUE
+            WHERE session_id = %s AND is_compressed = FALSE;
+            """,
+            (self.sess_id,)
+        )
+        self.conn.commit()
+
+        self.add_conv_turn(
+            prompt=prompt,
+            response=smry,
+            state="external",
+            p_tkns=p_tkns,
+            o_tkns=o_tkns
+        )
+
+        self.actv_convs = self._get_entire_conv_with_sys_prompt() # resync messages
+
+
+    def auto_compresss_active_conv(self):
+        """Auto compress session."""
+        prompt = "Summarise all previous conversations."
+        self.compress_active_conv(prompt)
 
 
     # =============================================================
