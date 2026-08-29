@@ -7,10 +7,10 @@ from typing import Literal, Any
 
 from src.config.prompts import SYS_PROMPT, COMPRESS_PROMPT
 from src.config.postgres import conn
-from src.logger import get_logger
+from src.logger import app_logger
 
 
-log = get_logger(__name__)
+app_log = app_logger(f"{__name__}.app")
 
 
 class ChatLogs:
@@ -34,7 +34,7 @@ class ChatLogs:
 
     def _init_chat_logs_db(self):
         """Create session lookup and chat logs table if missing."""
-        log.info(
+        app_log.info(
             "Initialising chat_sessions table for session '%s'",
             self.sess_name
         )
@@ -48,7 +48,7 @@ class ChatLogs:
             """
         )
 
-        log.info(
+        app_log.info(
             "Initialising chat_logs table for session '%s'",
             self.sess_name
         )
@@ -69,7 +69,7 @@ class ChatLogs:
         )
 
         # Index for session id lookup
-        log.info("Initialising index 'idx_chat_logs_session_id' on table 'chat_logs'")
+        app_log.info("Initialising index 'idx_chat_logs_session_id' on table 'chat_logs'")
         self.cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_chat_logs_session_id
@@ -99,14 +99,14 @@ class ChatLogs:
 
         if row:
             sess_id = str(row[0])
-            log.info(
+            app_log.info(
                 "Retrieved session id '%s' for session '%s'",
                 sess_id,
                 self.sess_name
             )
             return sess_id
         else:
-            log.info(
+            app_log.info(
                 "Session id for session '%s' not found: Session does not exists",
                 self.sess_name
             )
@@ -126,7 +126,7 @@ class ChatLogs:
         rows = self.cur.fetchall()
 
         if not rows:
-            log.info("No existing session found in chat_sessions")
+            app_log.info("No existing session found in chat_sessions")
             return {}
 
         for row in rows:
@@ -134,7 +134,7 @@ class ChatLogs:
                 "session_name": str(row[1]),
                 "created_at": str(row[2])
             }
-        log.info("%d session(s) found in the chat_sessions", len(rows))
+        app_log.info("%d session(s) found in the chat_sessions", len(rows))
         return sess_dict
 
 
@@ -154,7 +154,7 @@ class ChatLogs:
         if row is None:
             raise RuntimeError("Failed to create session: Database return no ID.")
 
-        log.info(
+        app_log.info(
             "Session '%s' created: Added new session entry to the chat_sessions table", 
             self.sess_name
         )
@@ -170,7 +170,7 @@ class ChatLogs:
         sess_id = self.get_sess_id()
 
         if not sess_id:
-            log.info("Session '%s' does not exists. Creating new session", self.sess_name)
+            app_log.info("Session '%s' does not exists. Creating new session", self.sess_name)
             sess_id = self._create_sess()
         return sess_id
 
@@ -207,11 +207,11 @@ class ChatLogs:
             (self.sess_id, prompt, response, state, p_tkns, o_tkns, json.dumps(metadata or {}))
         )
         self.conn.commit()
-        log.info("New conversation turn added to session '%s' chat logs", self.sess_name)
+        app_log.info("New conversation turn added to session '%s' chat logs", self.sess_name)
 
         # Resync messages
         self.convs = self.get_entire_conv()
-        log.debug("Resynced session '%s' conversations", self.sess_name)
+        app_log.debug("Resynced session '%s' conversations", self.sess_name)
 
 
     def clear_sess_chat_logs(self) -> tuple[str, bool]:
@@ -227,15 +227,15 @@ class ChatLogs:
         self.conn.commit()
 
         if del_count == 0:
-            log.warning(
+            app_log.warning(
                 "Failed to clear chat logs: Session '%s' does not exists or has no chat logs",
                 self.sess_name
             )
             return f"Failed to clear chat logs: Session '{self.sess_name}' does not exists or has no chat logs", False
-        log.info("Cleared session '%s' chat logs", self.sess_name)
+        app_log.info("Cleared session '%s' chat logs", self.sess_name)
 
         self.convs = self.get_entire_conv() # resync messages
-        log.debug("Resynced session '%s' conversations", self.sess_name)
+        app_log.debug("Resynced session '%s' conversations", self.sess_name)
         return f"Cleared session '{self.sess_name}' chat logs", True
 
 
@@ -267,13 +267,13 @@ class ChatLogs:
             for row in rows:
                 convs.append({"role": "user", "content": row[0]})
                 convs.append({"role": "assistant", "content": row[1]})
-            log.debug(
+            app_log.debug(
                 "%d conversation turns retrieved from session '%s'",
                 len(rows),
                 self.sess_name
             )
             return sys_prompt + convs
-        log.debug(
+        app_log.debug(
             "Session '%s' conversation does not exists. Returning system prompt only",
             self.sess_name
         )
@@ -296,7 +296,7 @@ class ChatLogs:
         row = self.cur.fetchone()
 
         if row:
-            log.debug(
+            app_log.debug(
                 "Retrieved latest conversation turn from session '%s' chat logs",
                 self.sess_name
             )
@@ -305,7 +305,7 @@ class ChatLogs:
                 {"role": "assistant", "content": row[1]}
             ]
         else:
-            log.debug(
+            app_log.debug(
                 "No conversation found in session '%s' chat logs: New session or session does not exists",
                 self.sess_name
             )
@@ -340,14 +340,14 @@ class ChatLogs:
             for row in rows:
                 convs.append({"role": "user", "content": row[0]})
                 convs.append({"role": "assistant", "content": row[1]})
-            log.debug(
+            app_log.debug(
                 "%d conversation turn(s) retrived form session '%s' chat logs",
                 len(rows),
                 self.sess_name
             )
             return convs
         else:
-            log.debug(
+            app_log.debug(
                 "No conversation found in session '%s' chat logs: New session or session does not exists",
                 self.sess_name
             )
@@ -380,7 +380,7 @@ class ChatLogs:
                     "mime_type": mime_type,
                     "size_bytes": attchmnt.stat().st_size if attchmnt.exists else 0
                 }
-                log.debug("Added metadata to attachment '%s'", attchmnt)
+                app_log.debug("Added metadata to attachment '%s'", attchmnt)
             return attchmnts_dict
         return {}
 

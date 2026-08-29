@@ -13,10 +13,10 @@ from src.agent.memory import Memory
 from src.agent.cmd_functions import Command
 from src.agent import format_context as fmt_cont
 from src.tools import KnowledgeBase, DocumentKnowledgeBase
-from src.logger import get_logger
+from src.logger import app_logger
 
 
-log = get_logger(__name__)
+app_log = app_logger(f"{__name__}.app")
 
 
 # def _last_token_usage(msgs: list[dict]) -> tuple[int, int]:
@@ -41,7 +41,7 @@ def _detect_cmd(prompt: str) -> tuple[str | None, str]:
         parts           = question_trimmed.split(" ", 1)
         cmd             = parts[0]
         cleaned_text    = parts[1].strip() if len(parts) > 1 else ""
-        log.debug("Command detected: %s", cmd)
+        app_log.debug("Command detected: %s", cmd)
         return cmd, cleaned_text
 
     return None, prompt
@@ -125,7 +125,7 @@ class Agent:
                     f"Run 'ollama pull {model}' to install model."
                 )
             known_models = set(local_models) - set(unknown_models)
-            log.info("Detected %s known model(s) and %s unknown model(s)", known_models, unknown_models)
+            app_log.info("Detected %s known model(s) and %s unknown model(s)", known_models, unknown_models)
 
         except Exception as e:
             # If ollama is down
@@ -186,7 +186,7 @@ class Agent:
         if cmd:
             # Only use 'user_prompt' as 'prompt' here
             if cmd == "/memorise":
-                log.debug("'/memorise' command triggered")
+                app_log.debug("'/memorise' command triggered")
                 msgs.append({"role": "user", "content": user_prompt})
                 response = self.cmd.cmd_memorise(
                     prompt=user_prompt,
@@ -199,7 +199,7 @@ class Agent:
                 # // END HERE //
 
             if cmd == "/recall":
-                log.debug("'/recall' command triggered")
+                app_log.debug("'/recall' command triggered")
                 msgs.append({"role": "user", "content": user_prompt})
                 response = self.cmd.cmd_recall(
                     prompt=user_prompt,
@@ -260,12 +260,12 @@ class Agent:
             prompt=prompt, mem_list=mem_list, doc_list=doc_list, attchmnt_dict=attchmnt_dict
         )
         msgs.append({"role": "user", "content": cmbind_prompt})
-        log.debug("Appended new message to current messages")
+        app_log.debug("Appended new message to current messages")
 
         # === MODEL ANSWER ======================================
 
         response, p_tkns, o_tkns = LLM.model_response(
-            msgs=msgs, model=self.model
+            model=self.model, msgs=msgs
         )
 
         # Calculate total tokens
@@ -292,7 +292,7 @@ class Agent:
         # === STORE ATTACHMENT(S) ===============================
 
         if attchmnt_dict:
-            log.info(
+            app_log.info(
                 "Storing %d uploaded attachment(s) to session '%s' knowledge base",
                 len(attchmnt_dict),
                 self.sess_name

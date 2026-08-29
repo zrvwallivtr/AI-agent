@@ -19,10 +19,11 @@ from src.agent.models.llm import LLM
 from src.agent.models.embed import Embed
 from src.agent.tokens_handler import Tokens
 from src.models_database import EMB_MODEL_DIMENSION
-from src.logger import get_logger
+from src.logger import app_logger, prompt_logger
 
 
-log = get_logger(__name__)
+app_log     = app_logger(f"{__name__}.app")
+prompt_log  = prompt_logger(f"{__name__}.prompt")
 
 CATEGORY_TYPES = Literal["preference", "stack", "fact", "project", "instruction", "correction"]
 
@@ -60,14 +61,14 @@ class Memory:
 
     def _init_memory_db(self):
         """Create memory table if missing."""
-        log.debug("Initialising vector extension for PostgreSQL")
+        app_log.debug("Initialising vector extension for PostgreSQL")
         self.cur.execute(
             """
             CREATE EXTENSION IF NOT EXISTS vector;
             """
         )
 
-        log.debug("Initialising table 'memory' with vector embedding dimension of %s", self.emb_dim)
+        app_log.debug("Initialising table 'memory' with vector embedding dimension of %s", self.emb_dim)
         create_mem_tbl = sql.SQL(
             """
             CREATE TABLE IF NOT EXISTS memory (
@@ -85,7 +86,7 @@ class Memory:
         self.cur.execute(create_mem_tbl)
 
         # HNSW index - must match the distance operator used in queries
-        log.debug("Initialising index 'idx_memory_embedding' on table 'memory' using HNSW")
+        app_log.debug("Initialising index 'idx_memory_embedding' on table 'memory' using HNSW")
         self.cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_memory_embedding
@@ -94,7 +95,7 @@ class Memory:
         )
 
         # Index for category lookup
-        log.debug("Initialising index 'idx_memory_category' on table 'memory'")
+        app_log.debug("Initialising index 'idx_memory_category' on table 'memory'")
         self.cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_memory_category
@@ -103,7 +104,7 @@ class Memory:
         )
 
         # Unique constraint on content_hash to enforce dedupe at database level
-        log.debug("Initialising index 'idx_memory_content_hash' on table 'memory'")
+        app_log.debug("Initialising index 'idx_memory_content_hash' on table 'memory'")
         self.cur.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash
@@ -141,10 +142,10 @@ class Memory:
 
             if row:
                 mem_id = str(row[0])
-                log.info("New memory entry saved to memory: id=%s", mem_id)
+                app_log.info("New memory entry saved to memory: id=%s", mem_id)
                 return mem_id
             else:
-                log.warning("Failed to save memory entry to memory")
+                app_log.warning("Failed to save memory entry to memory")
                 return
 
         except Exception as e:
@@ -162,7 +163,7 @@ class Memory:
         """Embeds texts and adds to memory logs."""
         cont, embeddings, cont_tkns = self.embed.embedding_content(cont)
         if not embeddings:
-            log.warning("Failed to generate vector embedding. No memory entry saved")
+            app_log.warning("Failed to generate vector embedding. No memory entry saved")
             return
 
         mem_id = self._add_mem_embeddings(
@@ -173,7 +174,7 @@ class Memory:
             extraction=extraction
         )
         if not mem_id:
-            log.warning("Failed to retrieve memory embedding id. No memory entry saved")
+            app_log.warning("Failed to retrieve memory embedding id. No memory entry saved")
             return
         return mem_id, cont_tkns
 
@@ -194,9 +195,9 @@ class Memory:
 
         count = len(ids) - del_count
         if not count == 0:
-            log.warning("Failed to delete %d memory entry(s)", count)
+            app_log.warning("Failed to delete %d memory entry(s)", count)
             return f"Failed to delete {count} memory entry(s)"
-        log.info("%d memory entry(s) deleted", del_count)
+        app_log.info("%d memory entry(s) deleted", del_count)
         return f"{del_count} memory entry(s) deleted"
 
 
@@ -219,11 +220,11 @@ class Memory:
             row = self.cur.fetchone()
 
             if not row:
-                log.warning("Failed to retrieve memory entry: Memory '%s' does not exist", id)
+                app_log.warning("Failed to retrieve memory entry: Memory '%s' does not exist", id)
                 continue
             mem_dict[str(row[0])] = str(row[1])
 
-        log.info("%d memory entries retrieved", len(mem_dict))
+        app_log.info("%d memory entries retrieved", len(mem_dict))
         return mem_dict
 
 
@@ -241,7 +242,7 @@ class Memory:
         rows = self.cur.fetchall()
 
         if rows:
-            log.info("%d memory entry(s) retrieved", len(rows))
+            app_log.info("%d memory entry(s) retrieved", len(rows))
             return [
                 {
                     "content": row[0],
@@ -249,7 +250,7 @@ class Memory:
                 } for row in rows
             ]
         else:
-            log.info("Failed to retrieve memory entry: No entry exists in memory")
+            app_log.info("Failed to retrieve memory entry: No entry exists in memory")
             return
 
 
@@ -326,25 +327,24 @@ class Memory:
         # === MANUAL MEMORY EXTRACTION =======================================
 
         if extraction == "manual":
-            log.debug(
+            app_log.debug(
                 "Manual memory extraction system prompt is implemented for model '%s'",
                 self.model
             )
-            system_prompt = self.mem_manual_prompt # User ask model with prompt
-            if prompt:
-                new_conv = prompt
-            else:
-                log.warning("Memory extraction failed: No prompt provided")
+            system_prompt = self.mem_manual_prompt
+            if not prompt:
+                app_log.warning("Memory extraction failed: No prompt provided")
                 return
+            new_conv = prompt
 
         # === AUTO MEMORY EXTRACTION =========================================
 
         else:
-            log.debug(
+            app_log.debug(
                 "Auto memory extraction system prompt is implemented for model '%s'",
                 self.model
             )
-            system_prompt = self.mem_prompt # Extract memory automatically
+            system_prompt = self.mem_prompt
             new_conv = self.chat_logs.get_latest_conv_turn()
 
         # === FORMAT CONTENT AND EXTRACT MEMORY ==============================
@@ -368,12 +368,12 @@ class Memory:
                 prompt=fmt_prompt
             )
             created_ids, total_tkn_used = self._format_and_add_to_mem(ext_out, extraction)
-            log.info("%d memory entry(s) extracted and saved", len(created_ids))
+            app_log.info("%d memory entry(s) extracted and saved", len(created_ids))
             print(f"Memory saved")
             return created_ids, p_tkns, o_tkns, total_tkn_used
 
         except Exception as e:
-            log.error("Memory extraction synthesis failed: %s", e, exc_info=True)
+            app_log.error("Memory extraction synthesis failed: %s", e, exc_info=True)
             return
 
 
@@ -389,7 +389,7 @@ class Memory:
     ) -> list[dict[str, Any]] | None:
         """Auto memory entry ability, returns memory entries if its toggled on."""
         if is_auto_mem_rtve:
-            log.debug("Auto memory retrieve on. Querying memory for similar content")
+            app_log.debug("Auto memory retrieve on. Querying memory for similar content")
             return self.query_similar_content(prompt, prompt_embeddings)
         return
 

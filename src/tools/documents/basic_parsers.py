@@ -8,10 +8,10 @@ from bs4 import BeautifulSoup
 from docling.document_converter import DocumentConverter
 
 from src.config.files_and_directories import UPLOAD_DIR
-from src.logger import get_logger
+from src.logger import app_logger
 
 
-log = get_logger(__name__)
+app_log = app_logger(f"{__name__}.app")
 
 
 class PathTraversalError(Exception):
@@ -97,11 +97,11 @@ class BasicParsers:
                         clean_row = [str(cell).strip() if cell is not None else "" for cell in row]
                         excel_text.append(" | ".join(clean_row))
 
-            log.info("Extracted text content from xlsx file row by row: path='%s', sheets=%d", path, len(wb.sheetnames))
+            app_log.info("Extracted text content from xlsx file row by row: path='%s', sheets=%d", path, len(wb.sheetnames))
             return "\n".join(excel_text)
 
         except Exception as e:
-            log.error("Failed to read xlsx file: path=%s, error=%s", path, e)
+            app_log.error("Failed to read xlsx file: path=%s, error=%s", path, e)
             return f"Failed to extract file content"
 
 
@@ -131,11 +131,11 @@ class BasicParsers:
             with pdfplumber.open(path) as pdf:
                 pages = [page.extract_text() for page in pdf.pages]
                 pages = [p for p in pages if p]
-                log.info("Extracted PDF text content page by page: path='%s', pages=%d", path, len(pdf.pages))
+                app_log.info("Extracted PDF text content page by page: path='%s', pages=%d", path, len(pdf.pages))
                 return "\n\n".join(pages)
 
         except Exception as e:
-            log.error("Failed to read PDF file: path=%s, error=%s", path, e)
+            app_log.error("Failed to read PDF file: path=%s, error=%s", path, e)
             return f"Failed to extract file content"
 
 
@@ -150,11 +150,11 @@ class BasicParsers:
                 if clean_text:
                     paragraphs.append(clean_text)
             
-            log.info("Extracted docx text content line by line: path='%s', paragraphs=%d", path, len(paragraphs))
+            app_log.info("Extracted docx text content line by line: path='%s', paragraphs=%d", path, len(paragraphs))
             return "\n".join(paragraphs)
 
         except Exception as e:
-            log.error("Failed to read DOCX file: path='%s', error=%s", path, e)
+            app_log.error("Failed to read DOCX file: path='%s', error=%s", path, e)
             return f"Failed to extract file content"
 
 
@@ -177,7 +177,7 @@ class BasicParsers:
                     if plain_text:
                         chapters_text.append(plain_text)
 
-            log.info(
+            app_log.info(
                 "Extracted plain text blocks from EPUB file: path='%s', chapters=%d",
                 path,
                 len(chapters_text)
@@ -185,7 +185,7 @@ class BasicParsers:
             return "\n\n".join(chapters_text)
 
         except Exception as e:
-            log.error("Failed to read EPUB file: path='%s', error=%s", path, e)
+            app_log.error("Failed to read EPUB file: path='%s', error=%s", path, e)
             return f"Failed to extract file content"
 
 
@@ -210,10 +210,10 @@ class BasicParsers:
         try:
             cont = path.read_text(encoding="utf-8", errors="ignore")
             clean_cont = "".join(c for c in cont if c.isprintable() or c in "\n\r\t")
-            log.info("Extracted '%s' file content as plain text: path='%s'", file_type, path)
+            app_log.info("Extracted '%s' file content as plain text: path='%s'", file_type, path)
             return clean_cont
         except Exception as e:
-            log.error(f"Failed to read '%s' file: path='%s', error=%s", file_type, path, e)
+            app_log.error(f"Failed to read '%s' file: path='%s', error=%s", file_type, path, e)
             return f"Failed to extract file content"
 
 

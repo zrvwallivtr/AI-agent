@@ -15,10 +15,10 @@ from src.agent.chat_logs import ChatLogs
 from src.agent.models.embed import Embed
 from src.tools.documents.basic_parsers import BasicParsers
 from src.tools.documents.document_reader import DocumentReader
-from src.logger import get_logger
+from src.logger import app_logger
 
 
-log = get_logger(__name__)
+app_log = app_logger(f"{__name__}.app")
 
 
 class DocumentKnowledgeBase:
@@ -77,7 +77,7 @@ class DocumentKnowledgeBase:
     def get_document_metadata_from_path(self, path: Path) -> tuple[str, str, int] | None:
         """Return name, mime type and size bytes from given path."""
         if not path.exists():
-            log.warning("'%s' does not exists in '%s'", path.name, UPLOAD_DIR)
+            app_log.warning("'%s' does not exists in '%s'", path.name, UPLOAD_DIR)
             return
 
         # Prevent duplicated name in the metadata
@@ -90,7 +90,7 @@ class DocumentKnowledgeBase:
         mime, _ = mimetypes.guess_type(path)
         mime = mime or "unknown"
         size = path.stat().st_size
-        log.debug("Metadata extracted from %s", path.name)
+        app_log.debug("Metadata extracted from %s", path.name)
         return name, mime, size
 
 
@@ -115,10 +115,10 @@ class DocumentKnowledgeBase:
 
             cont = self.doc_reader.read_document(path)
             if not cont:
-                log.warning("Failed to extract content from '%s'. Skipping", path.name)
+                app_log.warning("Failed to extract content from '%s'. Skipping", path.name)
                 return
 
-            log.info("Content extracted from '%s'", path.name)
+            app_log.info("Content extracted from '%s'", path.name)
             attchmnt_dict[path] = cont
 
         return attchmnt_dict
@@ -164,12 +164,12 @@ class DocumentKnowledgeBase:
                 )
             )
             self.conn.commit()
-            log.info("Added document '%s' to session '%s' knowledge base", doc_name, self.sess_name)
+            app_log.info("Added document '%s' to session '%s' knowledge base", doc_name, self.sess_name)
             return f"Added document '{doc_name}' to knowledge base"
 
         except Exception as e:
             self.conn.rollback()
-            log.warning("Database insert error: %s", e)
+            app_log.warning("Database insert error: %s", e)
             return f"Database insert error: {e}"
 
 
@@ -177,7 +177,7 @@ class DocumentKnowledgeBase:
         """Embed text document(s) and upload to knowledge base."""
         doc_data = self.get_document_metadata_from_path(path)
         if not doc_data:
-            log.warning(
+            app_log.warning(
                 "Failed to read '%s': File does not exists in %s",
                 path.name,
                 UPLOAD_DIR
@@ -187,7 +187,7 @@ class DocumentKnowledgeBase:
         # Hash raw content before embedding and check duplicates
         cont_hash = self._hash_content(cont)
         if self._is_doc_cont_exist(cont_hash):
-            log.info(
+            app_log.info(
                 "Document already exists in session '%s' knowledge base. Skipping re-embed",
                 self.sess_name
             )
@@ -196,7 +196,7 @@ class DocumentKnowledgeBase:
         # Embed content
         cont, embeddings, cont_tkns = self.embed.embedding_content(cont)
         if not embeddings:
-            log.warning(
+            app_log.warning(
                 "Unable to save document to session '%s' knowledge base: Failed to generate vector embedding for '%s'",
                 self.sess_name,
                 path.name
@@ -214,7 +214,7 @@ class DocumentKnowledgeBase:
         """Embed document(s) and upload to knowledge base."""
         doc_data = self.get_document_metadata_from_path(path)
         if not doc_data:
-            log.warning(
+            app_log.warning(
                 "Failed to read '%s': File does not exists in %s", path.name, UPLOAD_DIR
             )
             return f"Error reading '{path}': Path does not exist", 0
@@ -225,7 +225,7 @@ class DocumentKnowledgeBase:
         # Hash raw content before embedding and check duplicates
         cont_hash = self._hash_content(cont)
         if self._is_doc_cont_exist(cont_hash):
-            log.info(
+            app_log.info(
                 "Document already exists in session '%s' knowledge base. Skipping re-embed",
                 self.sess_name
             )
@@ -234,7 +234,7 @@ class DocumentKnowledgeBase:
         # Embed content
         cont, embeddings, cont_tkns = self.embed.embedding_content(cont)
         if not embeddings:
-            log.warning(
+            app_log.warning(
                 "Unable to save document to session '%s' knowledge base: Failed to generate vector embedding for '%s'",
                 self.sess_name,
                 path.name
@@ -266,7 +266,7 @@ class DocumentKnowledgeBase:
             rows = self.cur.fetchall()
 
             if not rows:
-                log.warning(
+                app_log.warning(
                     "Failed to retrieve documents: Session '%s' knowledge base is empty",
                     self.sess_name
                 )
@@ -275,7 +275,7 @@ class DocumentKnowledgeBase:
 
         except Exception as e:
             self.conn.rollback()
-            log.warning("Database query documents data error: %s", e)
+            app_log.warning("Database query documents data error: %s", e)
             return f"Database query documents data error: {e}"
 
 
@@ -341,7 +341,7 @@ class DocumentKnowledgeBase:
                     "content": cont,
                     "similarity": score
                 })
-            log.info("%d retrieved from session '%s' knowledge base", len(rows), self.sess_name)
+            app_log.info("%d retrieved from session '%s' knowledge base", len(rows), self.sess_name)
             return kw_dict
         else:
             return
@@ -359,7 +359,7 @@ class DocumentKnowledgeBase:
     ) -> list[dict[str, Any]] | None:
         """Auto fetches previous documents contents ability, return relevant contents if its toggled on."""
         if is_auto_doc_rtve:
-            log.debug(
+            app_log.debug(
                 "Auto document retrieve on. Querying session '%s' knowledge_base for relevant documents",
                 self.sess_name
             )

@@ -11,10 +11,10 @@ from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
 from src.agent import format_context as fmt_cont
 from src.tools import KnowledgeBase, DocumentKnowledgeBase
-from src.logger import get_logger
+from src.logger import app_logger
 
 
-log = get_logger(__name__)
+app_log = app_logger(f"{__name__}.app")
 
 
 class Command:
@@ -73,10 +73,10 @@ class Command:
               saved.
         """
         if not prompt:
-            log.warning("Command '/memorise' aborted: No prompt was provided")
+            app_log.warning("Command '/memorise' aborted: No prompt was provided")
             return "Please specify what to memorize."
 
-        messages = self.chat_logs.get_entire_conv()
+        msgs = self.chat_logs.get_entire_conv()
 
         # === FULL CONTEXT ==========================================
 
@@ -86,7 +86,8 @@ class Command:
         )
 
         cmbind_prompt = fmt_cont.build_prompt(prompt=prompt, attchmnt_dict=attchmnt_dict)
-        messages.append({"role": "user", "content": cmbind_prompt})
+        msgs.append({"role": "user", "content": cmbind_prompt})
+        app_log.debug("Appended new message to current messages")
 
         # === EXTRACT AND STORE MEMORY(S) ===========================
 
@@ -111,7 +112,7 @@ class Command:
         # User confirm options
         choice = input("Press [Enter] to continue or type [u] to undo:")
         if choice == "u":
-            log.debug("User selected [u]: Undoing saved memory(s)")
+            app_log.debug("User selected [u]: Undoing saved memory(s)")
             self.mem.delete_mem(created_ids)
             return "Entry deleted."
 
@@ -133,7 +134,7 @@ class Command:
         # === STORE ATTACHMENT(S) ===================================
 
         if attchmnt_dict:
-            log.info(
+            app_log.info(
                 "Storing %d uploaded attachment(s) to session '%s' knowledge base",
                 len(attchmnt_dict),
                 self.sess_name
@@ -155,10 +156,10 @@ class Command:
     ) -> str | None:
         """Retrieve and print relevant entries according to user prompt."""
         if not prompt:
-            log.warning("Command '/recall' aborted: No prompt was provided")
+            app_log.warning("Command '/recall' aborted: No prompt was provided")
             return "Please specify what to recall."
 
-        messages = self.chat_logs.get_entire_conv()
+        msgs = self.chat_logs.get_entire_conv()
 
         # === FULL CONTEXT ==========================================
 
@@ -182,7 +183,7 @@ class Command:
             model=self.mem.model,
             system_prompt=MEM_RECALL_INTERPRET_PROMPT,
             prompt=cmbind_prompt,
-            context=messages
+            context=msgs
         )
 
         # ///////////////////////////////////////////////////////////////////
@@ -202,7 +203,7 @@ class Command:
         # === STORE ATTACHMENT(S) ===================================
 
         if attchmnt_dict:
-            log.info(
+            app_log.info(
                 "Storing %d uploaded attachment(s) to session '%s' knowledge base",
                 len(attchmnt_dict),
                 self.sess_name

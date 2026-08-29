@@ -57,7 +57,7 @@ from src import config
 #             chat.to_llm,
 #             LLM.user(question),
 #         ]
-#         response = LLM.model_response(messages, model=config.PM_MODEL)
+#         response = LLM.model_response(model=config.PM_MODEL, messages)
 #         self.add_entry("Summary", response)
 #         return response
 # 
@@ -81,7 +81,7 @@ from src import config
 #             LLM.user("Tasks:"),
 #             LLM.user(tasks),
 #         ]
-#         response    = LLM.model_response(messages, model=config.PM_MODEL)
+#         response    = LLM.model_response(model=config.PM_MODEL, messages)
 #         self.write("Tasks", response)
 #         return response
 # 
@@ -105,7 +105,7 @@ from src import config
 #             chat.to_llm,
 #             LLM.user(question),
 #         ]
-#         response        = LLM.model_response(messages, model=config.PM_MODEL)
+#         response        = LLM.model_response(model=config.PM_MODEL, messages)
 #         self.add_entry("Decisions", response)
 #         return response
 # 

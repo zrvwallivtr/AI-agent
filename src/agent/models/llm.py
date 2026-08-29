@@ -3,8 +3,13 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 
+from src.logger import app_logger, prompt_logger
+
 
 console = Console()
+
+app_log     = app_logger(f"{__name__}.app")
+prompt_log  = prompt_logger(f"{__name__}.prompt")
 
 
 class LLM:
@@ -35,7 +40,7 @@ class LLM:
     # =====================================================================
 
     @staticmethod
-    def model_response(msgs: list[dict], model: str) -> tuple[str, int, int]:
+    def model_response(model: str, msgs: list[dict]) -> tuple[str, int, int]:
         """Response using specified model, streams output."""
         response = ""
         line_buffer = ""
@@ -45,6 +50,8 @@ class LLM:
         o_tkns   = 0
 
         # Send message to the model
+        if msgs:
+            prompt_log.info(msgs[-1].get("content", ""))
         stream = ollama.chat(model=model, messages=msgs, stream=True)
 
         # Stream model output in markdown
@@ -119,10 +126,13 @@ class LLM:
         else:
             msgs = [LLM.system(system_prompt)] + [LLM.user(prompt)]
 
-        response        = ollama.chat(model=model, messages=msgs)
-        content         = response.message.content
-        p_tkns   = getattr(response, "prompt_eval_cound", 0) or 0
-        o_tkns   = getattr(response, "eval_cound", 0) or 0
+        prompt_log.info(system_prompt)
+        prompt_log.info(msgs[-1].get("content", ""))
+
+        response = ollama.chat(model=model, messages=msgs)
+        content = response.message.content
+        p_tkns = getattr(response, "prompt_eval_cound", 0) or 0
+        o_tkns = getattr(response, "eval_cound", 0) or 0
         return content, p_tkns, o_tkns
 
 
@@ -147,4 +157,6 @@ class LLM:
             )
         else:
             msgs = [LLM.system(system_prompt)] + [LLM.user(prompt)]
-        return LLM.model_response(msgs, model)
+
+        prompt_log.info(system_prompt)
+        return LLM.model_response(model, msgs)

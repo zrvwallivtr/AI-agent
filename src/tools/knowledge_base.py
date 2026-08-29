@@ -11,10 +11,10 @@ from src.agent.chat_logs import ChatLogs
 from src.agent.models.embed import Embed
 from src.models_database import EMB_MODEL_DIMENSION
 from src.tools.documents.document_knowledge_base import DocumentKnowledgeBase
-from src.logger import get_logger
+from src.logger import app_logger
 
 
-log = get_logger(__name__)
+app_log = app_logger(f"{__name__}.app")
 
 
 class KnowledgeBase:
@@ -48,14 +48,14 @@ class KnowledgeBase:
 
     def _init_kw_bs(self):
         """Create knowledge base table if missing."""
-        log.debug("Initialising vector extension for PostgreSQL")
+        app_log.debug("Initialising vector extension for PostgreSQL")
         self.cur.execute(
             """
             CREATE EXTENSION IF NOT EXISTS VECTOR;
             """
         )
 
-        log.debug("Initialising tabe 'knowledge_base' with vector embedding dimension of %s", self.emb_dim)
+        app_log.debug("Initialising tabe 'knowledge_base' with vector embedding dimension of %s", self.emb_dim)
         create_kw_bs_tbl = sql.SQL(
             """
             CREATE TABLE IF NOT EXISTS knowledge_base (
@@ -75,7 +75,7 @@ class KnowledgeBase:
         self.cur.execute(create_kw_bs_tbl)
 
         # HNSW index - must match the distance operator used in queries
-        log.debug("Initialising index 'idx_kw_bs_embedding' on table 'knowledge_base' using HNSW")
+        app_log.debug("Initialising index 'idx_kw_bs_embedding' on table 'knowledge_base' using HNSW")
         self.cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_kw_bs_embedding
@@ -84,7 +84,7 @@ class KnowledgeBase:
         )
 
         # Index for session id and knowledge type lookups
-        log.debug("Initialising index 'idx_kw_bs_session_type' on table 'knowledge_base'")
+        app_log.debug("Initialising index 'idx_kw_bs_session_type' on table 'knowledge_base'")
         self.cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_kw_bs_session_type
@@ -93,7 +93,7 @@ class KnowledgeBase:
         )
 
         # Index for expires at lookups
-        log.debug("Initialising index 'idx_kw_bs_expires' on table 'knowledge_base'")
+        app_log.debug("Initialising index 'idx_kw_bs_expires' on table 'knowledge_base'")
         self.cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_kw_bs_expires
@@ -122,17 +122,17 @@ class KnowledgeBase:
             self.conn.commit()
 
             if del_count == 0:
-                log.warning(
+                app_log.warning(
                     "Failed to clear session '%s' knowledge base: '%s' contents not found in database",
                     self.sess_name,
                     typ
                 )
                 return f"Failed to remove session '{self.sess_name}' knowledge base: '{typ}' contents not found in database"
 
-            log.info("Cleared all %s contents in sesssion '%s' knowledge base", typ, self.sess_name)
+            app_log.info("Cleared all %s contents in sesssion '%s' knowledge base", typ, self.sess_name)
             return f"Cleared session '{self.sess_name}' knowledge base: {typ}"
 
         except Exception as e:
             self.conn.rollback()
-            log.warning("Database deletion error: %s", e)
+            app_log.warning("Database deletion error: %s", e)
             return f"Database deletion error: {e}"

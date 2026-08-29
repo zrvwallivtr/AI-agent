@@ -2,10 +2,10 @@ from pathlib import Path
 from docling.document_converter import DocumentConverter
 
 
-from src.logger import get_logger
+from src.logger import app_logger
 
 
-log = get_logger(__name__)
+app_log = app_logger(f"{__name__}.app")
 
 
 class DoclingParsers:
@@ -33,7 +33,7 @@ class DoclingParsers:
 
     def _docling(self, path: Path) -> str:
         """Convert any file to markdown via docling."""
-        log.info(f"Converting CSV file: {path}")
+        app_log.info(f"Converting CSV file: {path}")
         print(f"Converting document: {path}")
         result = self.converter.convert(path)
         return result.document.export_to_markdown()

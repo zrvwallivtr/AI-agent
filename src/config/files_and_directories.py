@@ -26,8 +26,10 @@ ENV_PATH        = APP_DIR / ".env"
 APP_DATA_DIR    = APP_DIR / "data"
 CUS_PROMPT_DIR  = APP_DATA_DIR / "prompts"
 # PROJECTS_DIR    = APP_DATA_DIR / "projects"
-LOG_DIR         = APP_DIR / "logs"
-LOG_FILE        = LOG_DIR / "agent.log"
+
+LOG_DIR             = APP_DIR / "logs"
+APP_LOG_FILE        = LOG_DIR / "app.log"
+PROMPT_LOG_FILE     = LOG_DIR / "prompts.log"
 
 
 def _create_user_dir(dir_list: list[Path]):
