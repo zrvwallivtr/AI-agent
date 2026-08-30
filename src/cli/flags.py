@@ -145,6 +145,16 @@ def main():
 
     args = parser.parse_args()
 
+    # =================================================================
+    # HELP / NO ARGUMENTS
+    # =================================================================
+
+    action_flags = [args.file]
+
+    if not args.question and not any(action_flags):
+        parser.print_help()
+        return
+
     agent       = Agent(model=args.model, sess_name=args.session)
     session     = Session(args.session or args.new_session or args.delete_session)
     file        = File(args.session)
@@ -255,13 +265,3 @@ def main():
             model=args.model,
             sess_name=args.session,
         )
-
-    # =================================================================
-    # HELP
-    # =================================================================
-
-    action_flags = [args.file]
-
-    if not args.question and not any(action_flags):
-        parser.print_help()
-        return

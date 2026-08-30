@@ -1,6 +1,4 @@
 from pathlib import Path
-from docling.document_converter import DocumentConverter
-
 
 from src.logger import app_logger
 
@@ -25,7 +23,13 @@ class DoclingParsers:
             ".epub": self._read_epub,
         }
 
-        self.converter = DocumentConverter()
+        self._converter = None
+
+    def _get_converter(self):
+        if self._converter is None:
+            from docling.document_converter import DocumentConverter
+            self._converter = DocumentConverter()
+        return self._converter
 
     # =======================================================
     # DOCLING

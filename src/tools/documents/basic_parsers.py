@@ -5,7 +5,6 @@ import ebooklib
 from pathlib import Path
 from ebooklib import epub
 from bs4 import BeautifulSoup
-from docling.document_converter import DocumentConverter
 
 from src.config.files_and_directories import UPLOAD_DIR
 from src.logger import app_logger
@@ -70,7 +69,6 @@ class BasicParsers:
             ".go": self._read_code,
         }
 
-        self.converter = DocumentConverter()
 
     # =======================================================
     # DATA & CONFIGURATION FORMATS
