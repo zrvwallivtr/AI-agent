@@ -4,6 +4,7 @@ chat                = "ministral_3b:latest"
 #chat                = "mistral:7b-instruct-v0.2-q4_K_M"
 memory              = "nomic-embed-text"
 project_manager     = "gemma3:1b"
+fallback_tokenizer  = "gpt2"
 
 # chat_max_tokens     =
 # pm_max_tokens       =

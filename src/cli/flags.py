@@ -6,6 +6,7 @@ from src.config.postgres import conn
 from agent.chat_logs import ChatLogs
 from src.agent.core import Agent
 from src.agent.memory import Memory
+from src.agent.tokenizers import install_tokenizers
 from src.tools import DocumentKnowledgeBase
 from src.cli.flag_functions import General, Session, File
 
@@ -129,6 +130,15 @@ def main():
         help="Create new project directory containing all the required files"
     )
 
+    # === INITIALISE TOKENIZERS =====================================================
+
+    parser.add_argument(
+        "--load-tokenizers",
+        "-lt",
+        action="store_true",
+        help="Install tokenizers for current installed models"
+    )
+
     # =================================================================
     # IMPORT CLASSES
     # =================================================================
@@ -225,6 +235,13 @@ def main():
     #     pm                              = ProjectManager(project_name)
     #     response                        = pm.add_decisions(question, session=session)
     #     return
+
+    # =================================================================
+    # TOKENIZERS
+    # =================================================================
+
+    if args.load_tokenizers:
+        install_tokenizers()
 
     # =================================================================
     # WHEN QUESTION IS ASKED

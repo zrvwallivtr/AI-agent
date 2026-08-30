@@ -38,8 +38,8 @@ class DocumentKnowledgeBase:
         self.doc_reader = DocumentReader()
         self.embed      = Embed()
 
-        self.doc_metadata   = self._get_all_documents_metadata()
-        self.doc_names      = self._get_all_documents_names()
+        # self.doc_metadata   = self._get_all_documents_metadata()
+        # self.doc_names      = self._get_all_documents_names()
 
 
     # ================================================
@@ -83,7 +83,7 @@ class DocumentKnowledgeBase:
         # Prevent duplicated name in the metadata
         name = path.name
         counter = 1
-        while name in self.doc_names:
+        while name in self.get_all_docs_names():
             name = f"{path.stem}({counter}){path.suffix}"
             counter += 1
 
@@ -252,7 +252,7 @@ class DocumentKnowledgeBase:
     # FROM DOCUMENTS IN KNOWLEDGE BASE
     # ================================================
 
-    def _get_all_documents_metadata(self) -> list[tuple[Any, Any]] | str:
+    def _get_all_docs_metadata(self) -> list[tuple[Any, Any]] | str:
         """Return a list of all uploaded documents data in the database."""
         try:
             self.cur.execute(
@@ -279,9 +279,9 @@ class DocumentKnowledgeBase:
             return f"Database query documents data error: {e}"
 
 
-    def _get_all_documents_names(self) -> list[str]:
+    def get_all_docs_names(self) -> list[str]:
         """Return a list of all uploaded documents names in the database."""
-        rows = self.doc_metadata
+        rows = self._get_all_docs_metadata()
         if isinstance(rows, str):
             return []
 
@@ -298,7 +298,7 @@ class DocumentKnowledgeBase:
 
     def list_all_uploaded_documents(self) -> str:
         """Return a list of all document(s) in the database."""
-        rows = self.doc_metadata
+        rows = self._get_all_docs_metadata()
         # if isinstance(rows, str):
         #     return rows
 

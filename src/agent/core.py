@@ -7,7 +7,7 @@ from src.config.models import MODEL, MODEL_MAX_TOKENS
 from src.config.postgres import conn
 from src.agent.models.llm import LLM
 from src.agent.models.embed import Embed
-from src.agent.tokens_handler import Tokens
+from src.agent.tokenizers import Tknizr
 from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
 from src.agent.cmd_functions import Command
@@ -17,20 +17,6 @@ from src.logger import app_logger
 
 
 app_log = app_logger(f"{__name__}.app")
-
-
-# def _last_token_usage(msgs: list[dict]) -> tuple[int, int]:
-#     """Returns p_tkns and o_tkns from the latest assistant message."""
-#     for msg in reversed(msgs):
-# 
-#         if msg["role"] == "assistant":
-#             p_tkns = msg.get("p_tkns", 0)
-#             o_tkns = msg.get("o_tkns", 0)
-#             log.info("Latest assistant response found (p_tkns=%d, o_tkns=%d)", p_tkns, o_tkns)
-#             return p_tkns, o_tkns
-# 
-#     log.warning("Latest assistant response not found")
-#     return 0, 0 # no previous assistant message yet (first turn)
 
 
 def _detect_cmd(prompt: str) -> tuple[str | None, str]:
@@ -58,9 +44,9 @@ class Agent:
         self._validate_model(model)
 
         if MODEL_MAX_TOKENS:
-            self.tokens = Tokens(model, MODEL_MAX_TOKENS)
+            self.tknizr = Tknizr(model, MODEL_MAX_TOKENS)
         else:
-            self.tokens = Tokens(model)
+            self.tknizr = Tknizr(model)
 
         self.conn       = conn
         self.model      = model
@@ -101,9 +87,9 @@ class Agent:
 
 
     @property
-    def get_model_max_tokens(self) -> int:
+    def get_model_max_tokens(self) -> int | None:
         """Dynamically fetches the current token ceiling from 'self.token'."""
-        return self.tokens.model_max_tokens
+        return self.tknizr.model_max_tokens
 
 
     # ===================================
@@ -125,7 +111,7 @@ class Agent:
                     f"Run 'ollama pull {model}' to install model."
                 )
             known_models = set(local_models) - set(unknown_models)
-            app_log.info("Detected %s known model(s) and %s unknown model(s)", known_models, unknown_models)
+            app_log.debug("Detected %s known model(s) and %s unknown model(s)", known_models, unknown_models)
 
         except Exception as e:
             # If ollama is down
@@ -144,17 +130,21 @@ class Agent:
         maximum tokens, the model summarise previous messages
         to free up token space.
         """
-        reserve                     = 1000 # (tokens)
-        current_history_tokens      = self.tokens.count_history_tokens(self.chat_logs.actv_convs)
-        estimate_next               = current_history_tokens + (len(prompt) // 4)
+        reserve         = 1000 # (tokens)
+        curr_hstry_tkns = self.tknizr.count_history_tokens(self.chat_logs.get_actv_convs())
+        if not curr_hstry_tkns:
+            return
 
-        # if self.tokens.model_max_tokens - estimate_next -reserve < 0:
-        #     logger.info("Current tokens exceeds threshold. Triggering compression")
-        #     print("Current tokens exceeds threshold. Compressing session...")
-        #     self.chat_logs.compression(self.model)
-        #     print("Continue session...")
-        #     return
-        # logger.info("Current tokens within threshold. Continue session")
+        estimate_next = curr_hstry_tkns + (len(prompt) // 4)
+
+        if self.tknizr.model_max_tokens - estimate_next -reserve < 0:
+            app_log.info("Current tokens exceeds threshold. Compressing session")
+            print("Current tokens exceeds threshold. Compressing session...")
+            self.chat_logs.auto_compresss_active_conv()
+            print("Compression completed. Continue session...")
+            return
+
+        app_log.debug("Current tokens within threshold. Continue session")
 
 
     # ===================================
@@ -177,7 +167,9 @@ class Agent:
         - Only the user question and LLM response will be
           stored into chat history.
         """
-        msgs = self.chat_logs.actv_convs
+        self._manage_token_budget(prompt)
+
+        msgs = self.chat_logs.get_actv_convs()
 
         cmd, user_prompt = _detect_cmd(prompt)
 

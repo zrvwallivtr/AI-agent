@@ -71,3 +71,5 @@ def _set_model_tokens(
 MODEL, MODEL_MAX_TOKENS     = _set_model_tokens(_cfg, CONFIG_FILE, "chat", "chat_max_tokens")
 EMBED_MODEL, MEM_MAX_TOKENS = _set_model_tokens(_cfg, CONFIG_FILE, "memory", "memory_max_tokens")
 PM_MODEL, PM_MAX_TOKENS     = _set_model_tokens(_cfg, CONFIG_FILE, "project_manager", "pm_max_tokens")
+
+FALLBACK_TOKENIZER = _cfg["models"]["fallback_tokenizer"]

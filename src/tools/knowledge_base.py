@@ -30,7 +30,6 @@ class KnowledgeBase:
         self.sess_name  = sess_name
 
         self.chat_logs  = chat_logs
-        self.sess_id    = self.chat_logs.sess_id
         self.embed      = Embed()
         self.emb_dim    = self.embed.emb_dim
 
@@ -39,7 +38,7 @@ class KnowledgeBase:
         )
 
         self._init_kw_bs()
-        self.doc_names = self.doc_kw_bs.doc_names
+        self.doc_names = self.doc_kw_bs.get_all_docs_names
 
 
     # ================================================
@@ -116,7 +115,7 @@ class KnowledgeBase:
                 DELETE FROM knowledge_base
                 WHERE session_id = %s AND type = %s
                 """,
-                (self.sess_id, typ)
+                (self.chat_logs.get_sess_id, typ)
             )
             del_count = self.cur.rowcount
             self.conn.commit()

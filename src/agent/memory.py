@@ -17,7 +17,6 @@ from src.agent.chat_logs import ChatLogs
 from src.agent.models.embed import Embed
 from src.agent.models.llm import LLM
 from src.agent.models.embed import Embed
-from src.agent.tokens_handler import Tokens
 from src.models_database import EMB_MODEL_DIMENSION
 from src.logger import app_logger, prompt_logger
 
@@ -50,7 +49,7 @@ class Memory:
 
         self.embed      = Embed()
         self.emb_dim    = self.embed.emb_dim
-        self.model_tkns = Tokens(self.model)
+        # self.model_tkns = Tokens(self.model)
 
         self._init_memory_db()
 

@@ -25,14 +25,11 @@ class ChatLogs:
         self.sys_prompt = SYS_PROMPT
         self.cmp_prompt = COMPRESS_PROMPT
 
-        self.sess_name      = sess_name.strip() if sess_name else "default_session"
+        self.sess_name = sess_name.strip() if sess_name else "default_session"
 
         self._init_chat_logs_db()
-        self.sess_id        = self._get_or_create_sess_id()
-        self.actv_convs     = self._get_entire_conv_with_sys_prompt()
-        self.curr_convs     = self.get_chat_history("not_compressed")
-        self.achived_convs  = self.get_chat_history("compressed")
-        self.all_convs      = self.get_chat_history("all")
+        # self.sess_id        = self._get_or_create_sess_id()
+        # self.actv_convs     = self._get_entire_conv_with_sys_prompt()
 
 
     # =============================================================
@@ -212,7 +209,7 @@ class ChatLogs:
             INSERT INTO chat_logs (session_id, prompt, response, state, total_prompt_tokens, total_output_tokens, metadata)
             VALUES (%s, %s, %s, %s, %s, %s, %s);
             """,
-            (self.sess_id, prompt, response, state, p_tkns, o_tkns, json.dumps(metadata or {}))
+            (self.get_sess_id(), prompt, response, state, p_tkns, o_tkns, json.dumps(metadata or {}))
         )
         self.conn.commit()
         app_log.info("New conversation turn added to session '%s' chat logs", self.sess_name)
@@ -229,7 +226,7 @@ class ChatLogs:
             DELETE FROM chat_logs
             WHERE session_id = %s;
             """,
-            (self.sess_id,)
+            (self.get_sess_id(),)
         )
         del_count = self.cur.rowcount
         self.conn.commit()
@@ -251,12 +248,12 @@ class ChatLogs:
     # FROM CHAT LOGS
     # =============================================================
 
-    def _get_entire_conv_with_sys_prompt(self) -> list[dict]:
+    def get_actv_convs(self) -> list[dict]:
         """
         Get all messages in a session with filter options.
         If session does not exists, return system prompt.
         """
-        sys_prompt = [{"role": "system", "content": self.sys_prompt}]
+        sys_prompt = [{"role": "system", "content": SYS_PROMPT}]
 
         self.cur.execute(
             """
@@ -265,7 +262,7 @@ class ChatLogs:
             WHERE session_id = %s AND state = 'external' AND is_compressed = FALSE
             ORDER BY created_at ASC;
             """,
-            (self.sess_id,)
+            (self.get_sess_id(),)
         )
         self.conn.commit()
         rows = self.cur.fetchall()
@@ -302,7 +299,7 @@ class ChatLogs:
                 WHERE session_id = %s AND state = 'external' AND is_compressed = TRUE
                 ORDER BY created_at ASC;
                 """,
-                (self.sess_id,)
+                (self.get_sess_id(),)
             )
         elif filter == "not_compressed":
             self.cur.execute(
@@ -312,7 +309,7 @@ class ChatLogs:
                 WHERE session_id = %s AND state = 'external' AND is_compressed = FALSE
                 ORDER BY created_at ASC;
                 """,
-                (self.sess_id,)
+                (self.get_sess_id(),)
             )
         else:
             self.cur.execute(
@@ -322,7 +319,7 @@ class ChatLogs:
                 WHERE session_id = %s AND state = 'external'
                 ORDER BY created_at ASC;
                 """,
-                (self.sess_id,)
+                (self.get_sess_id(),)
             )
 
         self.conn.commit()
@@ -353,7 +350,7 @@ class ChatLogs:
             ORDER BY created_at DESC
             LIMIT 1;
             """,
-            (self.sess_id,)
+            (self.get_sess_id(),)
         )
 
         self.conn.commit()
@@ -394,7 +391,7 @@ class ChatLogs:
                 )
             ORDER BY id ASC
             """,
-            (self.sess_id, self.sess_id)
+            (self.get_sess_id(), self.get_sess_id())
         )
         self.conn.commit()
         rows = self.cur.fetchall()
@@ -503,11 +500,11 @@ class ChatLogs:
     def compress_active_conv(self, prompt: str):
         """Call model to summarise all conversations where 'is_compressed' = FALSE in the database."""
         cmbind_prompt = build_prompt(
-            prompt=prompt, cmp_convs=self.curr_convs
+            prompt=prompt, cmp_convs=self.get_chat_history("not_compressed")
         )
 
         smry, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
-            model=self.model, system_prompt=self.cmp_prompt, prompt=cmbind_prompt,
+            model=MODEL, system_prompt=COMPRESS_PROMPT, prompt=cmbind_prompt,
         )
 
         # Update is compress status for previous conversations
@@ -517,7 +514,7 @@ class ChatLogs:
             SET is_compressed = TRUE
             WHERE session_id = %s AND is_compressed = FALSE;
             """,
-            (self.sess_id,)
+            (self.get_sess_id(),)
         )
         self.conn.commit()
 

@@ -26,6 +26,7 @@ ENV_PATH        = APP_DIR / ".env"
 APP_DATA_DIR    = APP_DIR / "data"
 CUS_PROMPT_DIR  = APP_DATA_DIR / "prompts"
 # PROJECTS_DIR    = APP_DATA_DIR / "projects"
+TOKENIZERS_DIR  = APP_DIR / "tokenizers"
 
 LOG_DIR             = APP_DIR / "logs"
 APP_LOG_FILE        = LOG_DIR / "app.log"
@@ -44,6 +45,7 @@ _create_user_dir(
         APP_DATA_DIR,
         CUS_PROMPT_DIR,
         # PROJECTS_DIR,
+        TOKENIZERS_DIR,
         LOG_DIR
     ]
 )

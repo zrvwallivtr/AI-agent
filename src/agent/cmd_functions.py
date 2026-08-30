@@ -6,7 +6,7 @@ from src.config.prompts import MEM_RECALL_INTERPRET_PROMPT
 from src.config.postgres import conn
 from src.agent.models.llm import LLM
 from src.agent.models.embed import Embed
-from src.agent.tokens_handler import Tokens
+# from src.agent.tokens_handler import Tokens
 from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
 from src.agent import format_context as fmt_cont
@@ -76,7 +76,7 @@ class Command:
             app_log.warning("Command '/memorise' aborted: No prompt was provided")
             return "Please specify what to memorize."
 
-        msgs = self.chat_logs.actv_convs
+        msgs = self.chat_logs.get_actv_convs()
 
         # === FULL CONTEXT ==========================================
 
@@ -159,7 +159,7 @@ class Command:
             app_log.warning("Command '/recall' aborted: No prompt was provided")
             return "Please specify what to recall."
 
-        msgs = self.chat_logs.actv_convs
+        msgs = self.chat_logs.get_actv_convs()
 
         # === FULL CONTEXT ==========================================
 
