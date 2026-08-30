@@ -1,9 +1,4 @@
-import pdfplumber
-import openpyxl
-import docx
-import ebooklib
 from pathlib import Path
-from ebooklib import epub
 from bs4 import BeautifulSoup
 
 from src.config.files_and_directories import UPLOAD_DIR
@@ -82,6 +77,7 @@ class BasicParsers:
     def _read_xlsx(self, path: Path) -> str:
         """Extracts text content from spreadsheet row by row."""
         try:
+            import openpyxl
             wb          = openpyxl.load_workbook(path, data_only=True)
             excel_text  = []
 
@@ -126,6 +122,7 @@ class BasicParsers:
     def _read_pdf(self, path: Path) -> str:
         """Extracts pdf text content layout page by page."""
         try:
+            import pdfplumber
             with pdfplumber.open(path) as pdf:
                 pages = [page.extract_text() for page in pdf.pages]
                 pages = [p for p in pages if p]
@@ -140,6 +137,7 @@ class BasicParsers:
     def _read_docx(self, path: Path) -> str:
         """Extracts structural text elements line by line from document."""
         try:
+            import docx
             doc = docx.Document(path)
             paragraphs = []
 
@@ -159,9 +157,11 @@ class BasicParsers:
     def _read_epub(self, path: Path) -> str:
         """Extracts plain text blocks from internal EPUB XHTML document payloads."""
         try:
-            book            = epub.read_epub(path)
-            chapters_text   = []
+            from ebooklib import epub
+            book = epub.read_epub(path)
+            chapters_text = []
 
+            import ebooklib
             for item in book.get_items():
                 # EPUB structural content is split into internal document items
                 if item.get_type() == ebooklib.ITEM_DOCUMENT:

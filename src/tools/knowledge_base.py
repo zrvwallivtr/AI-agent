@@ -21,7 +21,7 @@ class KnowledgeBase:
     def __init__(
         self,
         conn,
-        chat_logs = ChatLogs,
+        chat_logs: ChatLogs,
         sess_name: str | None = None,
     ):
         self.conn   = conn

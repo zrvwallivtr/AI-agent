@@ -28,7 +28,7 @@ class ChatLogs:
         self.sess_name = sess_name.strip() if sess_name else "default_session"
 
         self._init_chat_logs_db()
-        # self.sess_id        = self._get_or_create_sess_id()
+        # self.sess_id        = self.get_or_create_sess_id()
         # self.actv_convs     = self._get_entire_conv_with_sys_prompt()
 
 
@@ -143,7 +143,7 @@ class ChatLogs:
         return sess_dict
 
 
-    def _create_sess(self) -> str:
+    def create_sess(self) -> str:
         """Create session entry on the chat_sessions table and return its session id."""
         self.cur.execute(
             """
@@ -166,7 +166,7 @@ class ChatLogs:
         return str(row[0])
 
 
-    def _get_or_create_sess_id(self) -> str:
+    def get_or_create_sess_id(self) -> str:
         """
         Fetch session id if session already exists,
         else create new session entry and return
@@ -176,7 +176,7 @@ class ChatLogs:
 
         if not sess_id:
             app_log.info("Session '%s' does not exists. Creating new session", self.sess_name)
-            sess_id = self._create_sess()
+            sess_id = self.create_sess()
         return sess_id
 
 
@@ -209,13 +209,13 @@ class ChatLogs:
             INSERT INTO chat_logs (session_id, prompt, response, state, total_prompt_tokens, total_output_tokens, metadata)
             VALUES (%s, %s, %s, %s, %s, %s, %s);
             """,
-            (self.get_sess_id(), prompt, response, state, p_tkns, o_tkns, json.dumps(metadata or {}))
+            (self.get_or_create_sess_id(), prompt, response, state, p_tkns, o_tkns, json.dumps(metadata or {}))
         )
         self.conn.commit()
         app_log.info("New conversation turn added to session '%s' chat logs", self.sess_name)
 
         # Resync messages
-        self.actv_convs = self._get_entire_conv_with_sys_prompt()
+        self.actv_convs = self.get_actv_convs()
         app_log.debug("Resynced session '%s' conversations", self.sess_name)
 
 
@@ -226,7 +226,7 @@ class ChatLogs:
             DELETE FROM chat_logs
             WHERE session_id = %s;
             """,
-            (self.get_sess_id(),)
+            (self.get_or_create_sess_id(),)
         )
         del_count = self.cur.rowcount
         self.conn.commit()
@@ -239,7 +239,7 @@ class ChatLogs:
             return f"Failed to clear chat logs: Session '{self.sess_name}' does not exists or has no chat logs", False
         app_log.info("Cleared session '%s' chat logs", self.sess_name)
 
-        self.actv_convs = self._get_entire_conv_with_sys_prompt() # resync messages
+        self.actv_convs = self.get_actv_convs() # resync messages
         app_log.debug("Resynced session '%s' conversations", self.sess_name)
         return f"Cleared session '{self.sess_name}' chat logs", True
 
@@ -262,7 +262,7 @@ class ChatLogs:
             WHERE session_id = %s AND state = 'external' AND is_compressed = FALSE
             ORDER BY created_at ASC;
             """,
-            (self.get_sess_id(),)
+            (self.get_or_create_sess_id(),)
         )
         self.conn.commit()
         rows = self.cur.fetchall()
@@ -299,7 +299,7 @@ class ChatLogs:
                 WHERE session_id = %s AND state = 'external' AND is_compressed = TRUE
                 ORDER BY created_at ASC;
                 """,
-                (self.get_sess_id(),)
+                (self.get_or_create_sess_id(),)
             )
         elif filter == "not_compressed":
             self.cur.execute(
@@ -309,7 +309,7 @@ class ChatLogs:
                 WHERE session_id = %s AND state = 'external' AND is_compressed = FALSE
                 ORDER BY created_at ASC;
                 """,
-                (self.get_sess_id(),)
+                (self.get_or_create_sess_id(),)
             )
         else:
             self.cur.execute(
@@ -319,7 +319,7 @@ class ChatLogs:
                 WHERE session_id = %s AND state = 'external'
                 ORDER BY created_at ASC;
                 """,
-                (self.get_sess_id(),)
+                (self.get_or_create_sess_id(),)
             )
 
         self.conn.commit()
@@ -350,7 +350,7 @@ class ChatLogs:
             ORDER BY created_at DESC
             LIMIT 1;
             """,
-            (self.get_sess_id(),)
+            (self.get_or_create_sess_id(),)
         )
 
         self.conn.commit()
@@ -391,7 +391,7 @@ class ChatLogs:
                 )
             ORDER BY id ASC
             """,
-            (self.get_sess_id(), self.get_sess_id())
+            (self.get_or_create_sess_id(), self.get_or_create_sess_id())
         )
         self.conn.commit()
         rows = self.cur.fetchall()
@@ -514,7 +514,7 @@ class ChatLogs:
             SET is_compressed = TRUE
             WHERE session_id = %s AND is_compressed = FALSE;
             """,
-            (self.get_sess_id(),)
+            (self.get_or_create_sess_id(),)
         )
         self.conn.commit()
 
@@ -526,7 +526,7 @@ class ChatLogs:
             o_tkns=o_tkns
         )
 
-        self.actv_convs = self._get_entire_conv_with_sys_prompt() # resync messages
+        self.actv_convs = self.get_actv_convs() # resync messages
 
 
     def auto_compresss_active_conv(self):

@@ -12,7 +12,7 @@ from src.tools import KnowledgeBase
 cur = conn.cursor()
 
 
-def _del_sess(sess_name: str | None = None) -> str:
+def del_sess(sess_name: str | None = None) -> str:
     """
     Delete session related chat logs and database contents. If 'session'
     is not specified, delete default session related contents.
@@ -88,7 +88,7 @@ class General:
     @staticmethod
     def reset_default():
         """Clear active conversation and chat history."""
-        _del_sess()
+        del_sess()
 
     @staticmethod
     def installed_models():
@@ -114,7 +114,8 @@ class Session:
         prompt: str | None = None
     ) -> str | None:
         """Create session and response to user question."""
-        self.chat_logs = ChatLogs(conn=conn, sess_name=self.sess_name)
+        chat_logs = ChatLogs(conn=conn, sess_name=self.sess_name)
+        chat_logs.create_sess()
 
         if not prompt:
             return f"New session created: session={self.sess_name}"
@@ -123,14 +124,14 @@ class Session:
 
     def delete_session(self) -> str:
         """Delete session's related files."""
-        response = _del_sess(self.sess_name)
+        response = del_sess(self.sess_name)
         return response
 
 
     def list_session(self):
         """List all user created sessions, do not display session's chat history."""
-        self.chat_logs = ChatLogs(conn=conn, sess_name=self.sess_name)
-        sess_dict = self.chat_logs.get_all_existing_sess_metadata()
+        chat_logs = ChatLogs(conn=conn, sess_name=self.sess_name)
+        sess_dict = chat_logs.get_all_existing_sess_metadata()
 
         print("AVAILABLE SESSION(S)")
         print("====================")

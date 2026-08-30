@@ -2,12 +2,6 @@ import argparse
 from pathlib import Path
 
 from src.config.models import MODEL
-from src.config.postgres import conn
-from agent.chat_logs import ChatLogs
-from src.agent.core import Agent
-from src.agent.memory import Memory
-from src.agent.tokenizers import install_tokenizers
-from src.tools import DocumentKnowledgeBase
 from src.cli.flag_functions import General, Session, File
 
 
@@ -139,27 +133,7 @@ def main():
         help="Install tokenizers for current installed models"
     )
 
-    # =================================================================
-    # IMPORT CLASSES
-    # =================================================================
-
     args = parser.parse_args()
-
-    # =================================================================
-    # HELP / NO ARGUMENTS
-    # =================================================================
-
-    action_flags = [args.file]
-
-    if not args.question and not any(action_flags):
-        parser.print_help()
-        return
-
-    agent       = Agent(model=args.model, sess_name=args.session)
-    session     = Session(args.session or args.new_session or args.delete_session)
-    file        = File(args.session)
-    chat_logs   = ChatLogs(conn=conn, sess_name=args.session)
-    doc_kw_bs   = DocumentKnowledgeBase(conn=conn, chat_logs=chat_logs, sess_name=args.session)
 
     # =================================================================
     # DELETE
@@ -182,19 +156,31 @@ def main():
     # =================================================================
 
     if args.new_session:
+        session = Session(args.new_session)
         response = session.create_session(model=args.model, prompt=args.question)
         if response:
             print(response)
         return
 
     if args.delete_session:
-        response = session.delete_session()
+        from src.cli.flag_functions import del_sess
+        response = del_sess(args.delete_session)
         if response:
             print(response)
         return
 
     if args.list_session:
-        session.list_session()
+        from src.agent.chat_logs import ChatLogs
+        from src.config.postgres import conn
+        chat_logs = ChatLogs(conn=conn)
+        sess_dict = chat_logs.get_all_existing_sess_metadata()
+
+        print("AVAILABLE SESSION(S)")
+        print("====================")
+        print("CREATED AT\t\t\t\tSESSION NAME")
+        for sess in sess_dict:
+            print(f"{sess_dict[sess]["created_at"]}\t{sess_dict[sess]["session_name"]}")
+        print("\n")
         return
 
     # =================================================================
@@ -206,16 +192,21 @@ def main():
             print("Error: question required")
             return
 
-        if args.file:
-            file.attachments_with_prompt(
-                model=args.model,
-                prompt=args.question,
-                paths=args.file,
-                #project=args.project
-            )
-            return
+        file = File(args.session)
+        file.attachments_with_prompt(
+            model=args.model,
+            prompt=args.question,
+            paths=args.file,
+            #project=args.project
+        )
+        return
 
     if args.list_files:
+        from src.agent.chat_logs import ChatLogs
+        from src.tools import DocumentKnowledgeBase
+        from src.config.postgres import conn
+        chat_logs = ChatLogs(conn=conn, sess_name=args.session)
+        doc_kw_bs = DocumentKnowledgeBase(conn=conn, chat_logs=chat_logs, sess_name=args.session)
         print(doc_kw_bs.list_all_uploaded_documents())
         return
 
@@ -251,6 +242,7 @@ def main():
     # =================================================================
 
     if args.load_tokenizers:
+        from src.agent.tokenizers import install_tokenizers
         install_tokenizers()
 
     # =================================================================
@@ -265,3 +257,13 @@ def main():
             model=args.model,
             sess_name=args.session,
         )
+
+    # =================================================================
+    # HELP / NO ARGUMENTS
+    # =================================================================
+
+    action_flags = [args.file]
+
+    if not args.question and not any(action_flags):
+        parser.print_help()
+        return

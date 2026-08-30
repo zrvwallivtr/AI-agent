@@ -107,7 +107,7 @@ class Agent:
             if model not in local_models:
                 unknown_models += model
                 raise ValueError(
-                    f"Error: Unknown or unavailable model: '{model}'."
+                    f"Error: Unknown or unavailable model '{model}'."
                     f"Run 'ollama pull {model}' to install model."
                 )
             known_models = set(local_models) - set(unknown_models)
@@ -117,7 +117,7 @@ class Agent:
             # If ollama is down
             if isinstance(e, ValueError):
                 raise e
-            raise RuntimeError(f"Error: Could not connect to local Ollama service: {e}")
+            raise RuntimeError(f"Error: Could not connect to local Ollama service '{e}'")
 
 
     # ===================================
@@ -138,10 +138,11 @@ class Agent:
         estimate_next = curr_hstry_tkns + (len(prompt) // 4)
 
         if self.tknizr.model_max_tokens - estimate_next -reserve < 0:
-            app_log.info("Current tokens exceeds threshold. Compressing session")
+            app_log.info("Current tokens exceeds threshold. Compressing session '%s'", self.sess_name)
             print("Current tokens exceeds threshold. Compressing session...")
             self.chat_logs.auto_compresss_active_conv()
-            print("Compression completed. Continue session...")
+            app_log.info("Compression complete. Continue session '%s'", self.sess_name)
+            print("Compression complete. Continue session...")
             return
 
         app_log.debug("Current tokens within threshold. Continue session")
