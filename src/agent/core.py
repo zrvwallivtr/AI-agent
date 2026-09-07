@@ -298,15 +298,8 @@ class Agent:
                 self.sess_name
             )
             for doc_path, cont in attchmnt_dict.items():
-                result = self.doc_kw_bs.embedding_paragraph_chunks_and_add_to_kw_bs(doc_path, cont)
-                if result:
-                    app_log.info(
-                        "Stored attachment '%s' to session '%s' knowledge base",
-                        doc_path,
-                        self.sess_name
-                    )
-                    print("Attachment stored to session knowledge base")
-                else:
+                count = self.doc_kw_bs.embed_and_add_to_kw_bs(doc_path, cont)
+                if not count:
                     app_log.warning(
                         "Failed to store attachment '%s' to session '%s' knowledge base",
                         doc_path,
@@ -314,5 +307,12 @@ class Agent:
                     )
                     print("Error: Failed to embed/store attachment to knowledge base")
                     continue
+                app_log.info(
+                    "Stored attachment '%s' as %s chunks to session '%s' knowledge base",
+                    doc_path,
+                    count,
+                    self.sess_name
+                )
+                print("Attachment stored to session knowledge base")
         return
         # // END HERE //

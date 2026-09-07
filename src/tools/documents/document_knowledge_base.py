@@ -1,5 +1,4 @@
 import psycopg2
-from agent.embed_chunks import EmbedChunks
 import ollama
 import json
 import mimetypes
@@ -15,7 +14,6 @@ from src.config.files_and_directories import UPLOAD_DIR
 from src.config.postgres import conn
 from src.agent.chat_logs import ChatLogs
 from src.agent.models.embed import Embed
-from src.agent.embed_chunks import EmbedChunks
 from src.tools.documents.basic_parsers import BasicParsers
 from src.tools.documents.document_reader import DocumentReader
 from src.logger import app_logger
@@ -41,7 +39,6 @@ class DocumentKnowledgeBase:
         self.chat_logs      = chat_logs
         self.doc_reader     = DocumentReader()
         self.embed          = Embed()
-        self.embed_chnks    = EmbedChunks()
 
         # self.doc_metadata   = self._get_all_documents_metadata()
         # self.doc_names      = self._get_all_documents_names()
@@ -139,11 +136,10 @@ class DocumentKnowledgeBase:
     # ADD DOCUMENTS INTO KNOWLEDGE BASE
     # ================================================
 
-    def _add_document_chunk_to_kw_bs(
+    def _add_to_kw_bs(
         self,
         doc_name: str,
         chnk_idx: int,
-        tol_chnks: int,
         embeddings: list[float],
         chnk_tkns: int,
         cont: str,
@@ -156,7 +152,6 @@ class DocumentKnowledgeBase:
         metadata = {
             "document_name": doc_name,
             "document_chunk_index": chnk_idx,
-            "document_total_chunks": tol_chnks,
             "mime_type": mime,
             "size_bytes": size
         }
@@ -192,9 +187,10 @@ class DocumentKnowledgeBase:
     # EMBEDDING
     # ================================================
 
-    def embedding_paragraph_chunks_and_add_to_kw_bs(self, path: Path, cont: str | None) -> list[dict] | None:
+    def embed_and_add_to_kw_bs(self, path: Path, cont: str | None) -> int | None:
         """
-        Uses paragraph chunking method and embed each chunks and upload chunks to knowledge base.
+        Uses langchain text splitters for file format accordingly,
+        embed each chunks and save to knowledge base.
         """
         doc_data = self.get_document_metadata_from_path(path)
         if not doc_data:
@@ -206,13 +202,22 @@ class DocumentKnowledgeBase:
             return
         name, mime, size = doc_data
 
+        chnks = []
+
         if not cont:
-            cont = self.doc_reader.read_document(path)
+            cont, format = self.doc_reader.read_document(path)
 
-        chnks = self.embed_chnks.paragraph_chunking(cont)
-        tol_chnks = len(chnks)
-        results = []
+            # Langchain text splitters
+            from src.agent.splitters import txt_spltr, md_spltr
+            if format == "txt":
+                chnks = txt_spltr.split_text(cont)
+            if format == "md":
+                chnks = md_spltr.split_text(cont)
 
+        if not chnks:
+            return
+
+        count = 0
         for idx, chnk in enumerate(chnks):
             chnk_hash = self._hash_content(chnk)
             doc_chnk = self._is_doc_cont_chunk_exist(chnk_hash)
@@ -224,21 +229,20 @@ class DocumentKnowledgeBase:
                     self.sess_name
                 )
                 chnk_cont, embedding, chnk_tkns = doc_chnk
+
             else:
                 chnk_cont, embedding, chnk_tkns = self.embed.embedding_content(chnk)
 
             # Skip chunks that failed
             if not embedding:
                 app_log.warning(
-                    "Error occur in embedding chunk in '%s'. Skipping chunk",
-                    str(path)
+                    "Error occur in embedding chunk in '%s'. Skipping chunk", str(path)
                 )
                 continue
 
-            result = self._add_document_chunk_to_kw_bs(
+            result = self._add_to_kw_bs(
                 doc_name=name,
                 chnk_idx=idx,
-                tol_chnks=tol_chnks,
                 embeddings=embedding,
                 chnk_tkns=chnk_tkns,
                 cont=chnk_cont,
@@ -246,9 +250,9 @@ class DocumentKnowledgeBase:
                 size=size,
                 cont_hash=chnk_hash
             )
-            results.append({"chunk_index": idx, "status": result})
+            count += 1
 
-        return results
+        return count
 
 
     # ================================================

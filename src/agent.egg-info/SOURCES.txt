@@ -5,9 +5,10 @@ pyproject.toml
 src/agent/chat_logs.py
 src/agent/cmd_functions.py
 src/agent/core.py
+src/agent/embed_chunks.py
 src/agent/format_context.py
 src/agent/memory.py
-src/agent/tokens_handler.py
+src/agent/tokenizers.py
 src/agent.egg-info/PKG-INFO
 src/agent.egg-info/SOURCES.txt
 src/agent.egg-info/dependency_links.txt
@@ -16,6 +17,7 @@ src/agent.egg-info/requires.txt
 src/agent.egg-info/top_level.txt
 src/agent/models/embed.py
 src/agent/models/llm.py
+src/agent/models/validation.py
 src/cli/__init__.py
 src/cli/flag_functions.py
 src/cli/flags.py

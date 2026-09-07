@@ -17,4 +17,5 @@ Requires-Dist: docling>=2.120.1
 Requires-Dist: psycopg2>=2.9.12
 Requires-Dist: dotenv>=0.9.9
 Requires-Dist: tokenizers>=0.22.2
+Requires-Dist: langchain-text-splitters>=1.1.2
 Dynamic: license-file
