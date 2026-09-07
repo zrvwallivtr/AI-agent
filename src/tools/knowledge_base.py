@@ -6,6 +6,7 @@ from psycopg2 import sql
 from pathlib import Path
 from typing import Any, Literal
 
+from src.config.models import EMBED_MODEL
 from src.config.postgres import conn
 from src.agent.chat_logs import ChatLogs
 from src.agent.models.embed import Embed
@@ -31,7 +32,7 @@ class KnowledgeBase:
 
         self.chat_logs  = chat_logs
         self.embed      = Embed()
-        self.emb_dim    = self.embed.emb_dim
+        self.emb_dim    = EMB_MODEL_DIMENSION[EMBED_MODEL]
 
         self.doc_kw_bs  = DocumentKnowledgeBase(
             conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name

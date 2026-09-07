@@ -2,6 +2,7 @@ from re import search
 from agent import format_context
 from pathlib import Path
 
+from src.config.models import MODEL
 from src.config.prompts import MEM_RECALL_INTERPRET_PROMPT
 from src.config.postgres import conn
 from src.agent.models.llm import LLM
@@ -140,8 +141,18 @@ class Command:
                 self.sess_name
             )
             for doc_path, cont in attchmnt_dict.items():
-                notify, tkn_used = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
-                print(notify)
+                result = self.doc_kw_bs.embedding_paragraph_chunks_and_add_to_kw_bs(doc_path, cont)
+                if result:
+                    notify, _ = result
+                    print(notify)
+                else:
+                    app_log.warning(
+                        "Failed to store attachment '%s' to session '%s' knowledge base",
+                        doc_path,
+                        self.sess_name
+                    )
+                    print("Error: Failed to embed/store attachment to knowledge base")
+                    continue
                 # /////////////////////////////////////////////
                 # Embedding token count: emb_tkns + tkn_used
                 # /////////////////////////////////////////////
@@ -209,8 +220,18 @@ class Command:
                 self.sess_name
             )
             for doc_path, cont in attchmnt_dict.items():
-                notify, tkn_used = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
-                print(notify)
+                result = self.doc_kw_bs.embedding_paragraph_chunks_and_add_to_kw_bs(doc_path, cont)
+                if result:
+                    notify, _ = result
+                    print(notify)
+                else:
+                    app_log.warning(
+                        "Failed to store attachment '%s' to session '%s' knowledge base",
+                        doc_path,
+                        self.sess_name
+                    )
+                    print("Error: Failed to embed/store attachment to knowledge base")
+                    continue
                 # /////////////////////////////////////////////
                 # Embedding token count: emb_tkns + tkn_used
                 # /////////////////////////////////////////////

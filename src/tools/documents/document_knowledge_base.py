@@ -1,4 +1,5 @@
 import psycopg2
+from agent.embed_chunks import EmbedChunks
 import ollama
 import json
 import mimetypes
@@ -8,11 +9,13 @@ from pathlib import Path
 from typing import Any
 from datetime import datetime, timedelta, timezone
 
+from src.config.models import MODEL
 from src.config.memory import RETRIEVE_MEM_ENTRY_LIMIT
 from src.config.files_and_directories import UPLOAD_DIR
 from src.config.postgres import conn
 from src.agent.chat_logs import ChatLogs
 from src.agent.models.embed import Embed
+from src.agent.embed_chunks import EmbedChunks
 from src.tools.documents.basic_parsers import BasicParsers
 from src.tools.documents.document_reader import DocumentReader
 from src.logger import app_logger
@@ -34,9 +37,11 @@ class DocumentKnowledgeBase:
         self.sess_name = sess_name
         self.qry_limit  = RETRIEVE_MEM_ENTRY_LIMIT
 
-        self.chat_logs  = chat_logs
-        self.doc_reader = DocumentReader()
-        self.embed      = Embed()
+        self.model          = MODEL
+        self.chat_logs      = chat_logs
+        self.doc_reader     = DocumentReader()
+        self.embed          = Embed()
+        self.embed_chnks    = EmbedChunks()
 
         # self.doc_metadata   = self._get_all_documents_metadata()
         # self.doc_names      = self._get_all_documents_names()
@@ -54,20 +59,26 @@ class DocumentKnowledgeBase:
         return hashlib.sha256(cont.encode("utf-8")).hexdigest()
 
 
-    def _is_doc_cont_exist(self, new_hash: str) -> bool:
+    def _is_doc_cont_chunk_exist(self, new_hash: str) -> tuple[str, list[float], int] | None:
         """
-        If the same document content was uploaded before (same
-        hash, accross sessions), skip re-embedding. Return True
-        if a duplicate exist.
+        Check if the same document content chunk was uploaded before (same
+        hash, accross sessions). Return embeddings if a duplicate exist.
         """
         self.cur.execute(
             """
-            SELECT id FROM knowledge_base WHERE content_hash = %s
+            SELECT content, embedding, prompt_tokens
+            FROM knowledge_base
+            WHERE content_hash = %s
+            LIMIT 1
             """,
             (new_hash,)
         )
-        existing = self.cur.fetchone()
-        return existing is not None
+        row = self.cur.fetchone()
+        if row is None:
+            return None
+
+        chnk_cont, embedding, chnk_tkns = row
+        return chnk_cont, embedding, chnk_tkns
 
 
     # ================================================
@@ -116,7 +127,7 @@ class DocumentKnowledgeBase:
             cont = self.doc_reader.read_document(path)
             if not cont:
                 app_log.warning("Failed to extract content from '%s'. Skipping", path.name)
-                return
+                continue
 
             app_log.info("Content extracted from '%s'", path.name)
             attchmnt_dict[path] = cont
@@ -128,11 +139,13 @@ class DocumentKnowledgeBase:
     # ADD DOCUMENTS INTO KNOWLEDGE BASE
     # ================================================
 
-    def _add_document_to_kw_bs(
+    def _add_document_chunk_to_kw_bs(
         self,
         doc_name: str,
+        chnk_idx: int,
+        tol_chnks: int,
         embeddings: list[float],
-        cont_tkns: int,
+        chnk_tkns: int,
         cont: str,
         mime: str,
         size: int,
@@ -142,6 +155,8 @@ class DocumentKnowledgeBase:
         """Upload documents to knowledge base."""
         metadata = {
             "document_name": doc_name,
+            "document_chunk_index": chnk_idx,
+            "document_total_chunks": tol_chnks,
             "mime_type": mime,
             "size_bytes": size
         }
@@ -153,10 +168,10 @@ class DocumentKnowledgeBase:
                 VALUES (%s, %s, %s::vector, %s, %s, %s, %s, %s)
                 """,
                 (
-                    self.chat_logs.sess_id,
+                    self.chat_logs.get_sess_id(),
                     "document",
                     str(embeddings),
-                    cont_tkns,
+                    chnk_tkns,
                     cont,
                     cont_hash,
                     exprs_at,
@@ -173,8 +188,14 @@ class DocumentKnowledgeBase:
             return f"Database insert error: {e}"
 
 
-    def embed_txt_and_add_doc_to_kw_bs(self, path: Path, cont: str) -> tuple[str, int]:
-        """Embed text document(s) and upload to knowledge base."""
+    # ================================================
+    # EMBEDDING
+    # ================================================
+
+    def embedding_paragraph_chunks_and_add_to_kw_bs(self, path: Path, cont: str | None) -> list[dict] | None:
+        """
+        Uses paragraph chunking method and embed each chunks and upload chunks to knowledge base.
+        """
         doc_data = self.get_document_metadata_from_path(path)
         if not doc_data:
             app_log.warning(
@@ -182,70 +203,52 @@ class DocumentKnowledgeBase:
                 path.name,
                 UPLOAD_DIR
             )
-            return f"Error reading '{path}': Path does not exist", 0
-
-        # Hash raw content before embedding and check duplicates
-        cont_hash = self._hash_content(cont)
-        if self._is_doc_cont_exist(cont_hash):
-            app_log.info(
-                "Document already exists in session '%s' knowledge base. Skipping re-embed",
-                self.sess_name
-            )
-            return "Document already in knowledge base. Skipping re-embed", 0
-
-        # Embed content
-        cont, embeddings, cont_tkns = self.embed.embedding_content(cont)
-        if not embeddings:
-            app_log.warning(
-                "Unable to save document to session '%s' knowledge base: Failed to generate vector embedding for '%s'",
-                self.sess_name,
-                path.name
-            )
-            return f"Unable to save document to session '{self.sess_name}' knowledge base: Failed to generate vector embedding", 0
-
-        # Add embeddings to database
+            return
         name, mime, size = doc_data
-        return self._add_document_to_kw_bs(
-            doc_name=name, embeddings=embeddings, cont_tkns=cont_tkns, cont=cont, mime=mime, size=size, cont_hash=cont_hash
-        ), cont_tkns
 
+        if not cont:
+            cont = self.doc_reader.read_document(path)
 
-    def embed_and_add_doc_to_kw_bs(self, path: Path) -> tuple[str, int]:
-        """Embed document(s) and upload to knowledge base."""
-        doc_data = self.get_document_metadata_from_path(path)
-        if not doc_data:
-            app_log.warning(
-                "Failed to read '%s': File does not exists in %s", path.name, UPLOAD_DIR
+        chnks = self.embed_chnks.paragraph_chunking(cont)
+        tol_chnks = len(chnks)
+        results = []
+
+        for idx, chnk in enumerate(chnks):
+            chnk_hash = self._hash_content(chnk)
+            doc_chnk = self._is_doc_cont_chunk_exist(chnk_hash)
+
+            # Skip embedding if already exists
+            if doc_chnk:
+                app_log.info(
+                    "Document already exists in session '%s' knowledge base. Skipping re-embed",
+                    self.sess_name
+                )
+                chnk_cont, embedding, chnk_tkns = doc_chnk
+            else:
+                chnk_cont, embedding, chnk_tkns = self.embed.embedding_content(chnk)
+
+            # Skip chunks that failed
+            if not embedding:
+                app_log.warning(
+                    "Error occur in embedding chunk in '%s'. Skipping chunk",
+                    str(path)
+                )
+                continue
+
+            result = self._add_document_chunk_to_kw_bs(
+                doc_name=name,
+                chnk_idx=idx,
+                tol_chnks=tol_chnks,
+                embeddings=embedding,
+                chnk_tkns=chnk_tkns,
+                cont=chnk_cont,
+                mime=mime,
+                size=size,
+                cont_hash=chnk_hash
             )
-            return f"Error reading '{path}': Path does not exist", 0
+            results.append({"chunk_index": idx, "status": result})
 
-        # Read with correct parsers
-        cont = self.doc_reader.read_document(path)
-
-        # Hash raw content before embedding and check duplicates
-        cont_hash = self._hash_content(cont)
-        if self._is_doc_cont_exist(cont_hash):
-            app_log.info(
-                "Document already exists in session '%s' knowledge base. Skipping re-embed",
-                self.sess_name
-            )
-            return "Document already in knowledge base. Skipping re-embed", 0
-
-        # Embed content
-        cont, embeddings, cont_tkns = self.embed.embedding_content(cont)
-        if not embeddings:
-            app_log.warning(
-                "Unable to save document to session '%s' knowledge base: Failed to generate vector embedding for '%s'",
-                self.sess_name,
-                path.name
-            )
-            return f"Unable to save document to session '{self.sess_name}' knowledge base: Failed to generate vector embedding", 0
-
-        # Add embeddings to database
-        name, mime, size = doc_data
-        return self._add_document_to_kw_bs(
-            doc_name=name, embeddings=embeddings, cont_tkns=cont_tkns, cont=cont, mime=mime, size=size, cont_hash=cont_hash
-        ), cont_tkns
+        return results
 
 
     # ================================================
@@ -261,7 +264,7 @@ class DocumentKnowledgeBase:
                 FROM knowledge_base
                 WHERE session_id = %s AND type = %s
                 """,
-                (self.chat_logs.sess_id, "document")
+                (self.chat_logs.get_sess_id(), "document")
             )
             rows = self.cur.fetchall()
 
@@ -334,7 +337,7 @@ class DocumentKnowledgeBase:
         )
         rows = self.cur.fetchall()
 
-        if kw_dict:
+        if rows:
             for cont, metadata, score in rows:
                 kw_dict.append({
                     "document_name": metadata.get("document_name", "Unknown"),

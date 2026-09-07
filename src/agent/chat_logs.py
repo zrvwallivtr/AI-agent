@@ -28,8 +28,6 @@ class ChatLogs:
         self.sess_name = sess_name.strip() if sess_name else "default_session"
 
         self._init_chat_logs_db()
-        # self.sess_id        = self.get_or_create_sess_id()
-        # self.actv_convs     = self._get_entire_conv_with_sys_prompt()
 
 
     # =============================================================
@@ -226,7 +224,7 @@ class ChatLogs:
             DELETE FROM chat_logs
             WHERE session_id = %s;
             """,
-            (self.get_or_create_sess_id(),)
+            (self.get_sess_id(),)
         )
         del_count = self.cur.rowcount
         self.conn.commit()
@@ -299,7 +297,7 @@ class ChatLogs:
                 WHERE session_id = %s AND state = 'external' AND is_compressed = TRUE
                 ORDER BY created_at ASC;
                 """,
-                (self.get_or_create_sess_id(),)
+                (self.get_sess_id(),)
             )
         elif filter == "not_compressed":
             self.cur.execute(
@@ -309,7 +307,7 @@ class ChatLogs:
                 WHERE session_id = %s AND state = 'external' AND is_compressed = FALSE
                 ORDER BY created_at ASC;
                 """,
-                (self.get_or_create_sess_id(),)
+                (self.get_sess_id(),)
             )
         else:
             self.cur.execute(
@@ -319,7 +317,7 @@ class ChatLogs:
                 WHERE session_id = %s AND state = 'external'
                 ORDER BY created_at ASC;
                 """,
-                (self.get_or_create_sess_id(),)
+                (self.get_sess_id(),)
             )
 
         self.conn.commit()
@@ -507,14 +505,14 @@ class ChatLogs:
             model=MODEL, system_prompt=COMPRESS_PROMPT, prompt=cmbind_prompt,
         )
 
-        # Update is compress status for previous conversations
+        # Update 'is_compress' status for previous conversations
         self.cur.execute(
             """
             UPDATE chat_logs
             SET is_compressed = TRUE
             WHERE session_id = %s AND is_compressed = FALSE;
             """,
-            (self.get_or_create_sess_id(),)
+            (self.get_sess_id(),)
         )
         self.conn.commit()
 

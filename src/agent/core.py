@@ -3,7 +3,7 @@ from agent import format_context
 import ollama
 from pathlib import Path
 
-from src.config.models import MODEL, MODEL_MAX_TOKENS
+from src.config.models import MODEL, MODEL_MAX_TOKENS, EMBED_MODEL, EMBED_MAX_TOKENS
 from src.config.postgres import conn
 from src.agent.models.llm import LLM
 from src.agent.models.embed import Embed
@@ -12,6 +12,7 @@ from src.agent.chat_logs import ChatLogs
 from src.agent.memory import Memory
 from src.agent.cmd_functions import Command
 from src.agent import format_context as fmt_cont
+from src.agent.models.validation import validate_model
 from src.tools import KnowledgeBase, DocumentKnowledgeBase
 from src.logger import app_logger
 
@@ -41,7 +42,7 @@ class Agent:
         project: str | None = None
     ):
         model = MODEL if model is None else model
-        self._validate_model(model)
+        validate_model(model)
 
         if MODEL_MAX_TOKENS:
             self.tknizr = Tknizr(model, MODEL_MAX_TOKENS)
@@ -50,6 +51,7 @@ class Agent:
 
         self.conn       = conn
         self.model      = model
+        self.emb_model  = EMBED_MODEL
         self.sess_name  = sess_name
         self.project    = project
 
@@ -84,12 +86,6 @@ class Agent:
         )
 
         # self.search_agent   = SearchAgent()
-
-
-    @property
-    def get_model_max_tokens(self) -> int | None:
-        """Dynamically fetches the current token ceiling from 'self.token'."""
-        return self.tknizr.model_max_tokens
 
 
     # ===================================
@@ -302,7 +298,21 @@ class Agent:
                 self.sess_name
             )
             for doc_path, cont in attchmnt_dict.items():
-                notify, _ = self.doc_kw_bs.embed_txt_and_add_doc_to_kw_bs(doc_path, cont)
-                print(notify)
+                result = self.doc_kw_bs.embedding_paragraph_chunks_and_add_to_kw_bs(doc_path, cont)
+                if result:
+                    app_log.info(
+                        "Stored attachment '%s' to session '%s' knowledge base",
+                        doc_path,
+                        self.sess_name
+                    )
+                    print("Attachment stored to session knowledge base")
+                else:
+                    app_log.warning(
+                        "Failed to store attachment '%s' to session '%s' knowledge base",
+                        doc_path,
+                        self.sess_name
+                    )
+                    print("Error: Failed to embed/store attachment to knowledge base")
+                    continue
         return
         # // END HERE //

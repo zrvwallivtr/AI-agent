@@ -9,12 +9,16 @@ from src.logger import app_logger
 
 
 MODEL_NAME_TO_HF_TOKENIZER = {
+    # ==========            ===========================
+    # MODEL NAME            HUGGINGFACE REPOSITORY NAME
+    # ==========            ===========================
+
+    # === LLMS =========================================
+
     # Mistral
     "mistral":              "mistralai/Mistral-7B-Instruct-v0.2",
     "dolphin-mistral":      "mistralai/Mistral-7B-Instruct-v0.2",
     "ministral_3b":         "ministral/Ministral-3b-instruct",
-
-    "nomic-embed-text":     "nomic-ai/nomic-embed-text-v1.5",
 
     # Llama
     "llama3.1":             "meta-llama/Llama-3.1-8B-Instruct",
@@ -25,10 +29,19 @@ MODEL_NAME_TO_HF_TOKENIZER = {
 
     # Phi
     "dolphin-phi":          "microsoft/phi-2",
+
+    # === EMBEDDING MODELS =============================
+
+    # Nomic
+    "nomic-embed-text":     "nomic-ai/nomic-embed-text-v1.5",
 }
 
 app_log = app_logger(__name__)
 
+
+# =============================================================
+# INSTALLATION
+# =============================================================
 
 def install_tokenizers():
     """Install tokenizers from model list, internet required."""
@@ -100,10 +113,14 @@ def install_tokenizers():
             )
 
 
+# =============================================================
+# TOKENIZER
+# =============================================================
+
 class Tknizr:
     def __init__(self, model: str, model_max_tokens: int | None = None):
         self.model = model
-        self.tknizr = self._load_tokenizer()
+        self.load_tknizr = self._load_tokenizer()
 
         # === SET MODEL MAX TOKENS ====================================
 
@@ -124,19 +141,26 @@ class Tknizr:
             self.model_max_tokens = None
 
 
+    # =========================================================
+    # LOAD INSTALLED TOKENIZER
+    # =========================================================
+
     def _load_tokenizer(self) -> Tokenizer | None:
         """Load local installed tokenizer."""
         file = TOKENIZERS_DIR / f"{self.model}.json"
 
+        # === LOAD PRE-INSTALLED TOKENIZER ===================================
+
         try:
-            # Load pre-installed tokenizer
             tknizr = Tokenizer.from_file(str(file))
             app_log.debug("'%s' tokenizer loaded from '%s'", self.model, file)
             return tknizr
 
         except Exception as e:
+
+            # === LOAD PRE-INSTALLED FALLBACK TOKENIZER ======================
+
             try:
-                # Load pre-installed fallback tokenizer
                 tknizr = Tokenizer.from_file(str(TOKENIZERS_DIR / f"{FALLBACK_TOKENIZER}.json"))
                 app_log.warning(
                     "Failed to load '%s' tokenizer: %s. Falling back to '%s' tokenizer",
@@ -146,8 +170,9 @@ class Tknizr:
                 )
                 return tknizr
 
+            # === DISABLE TOKENIZER FEATURE ==================================
+
             except Exception as fallback_err:
-                # Disable tokenizer feature
                 app_log.warning(
                     "Failed to load '%s' fallback tokenizer: %s. Tokenizer feature disabled",
                     FALLBACK_TOKENIZER,
@@ -168,16 +193,16 @@ class Tknizr:
 
     def count_string_tokens(self, text: str) -> int | None:
         """Counts tokens in string."""
-        if self.tknizr:
+        if self.load_tknizr:
             if not text:
                 # logger.warning("Cannot count tokens in string: No text provided")
                 return 0
-            return len(self.tknizr.encode(text))
+            return len(self.load_tknizr.encode(text))
 
 
     def count_history_tokens(self, msgs: list[dict]) -> int | None:
         """Calculates total token weight."""
-        if self.tknizr:
+        if self.load_tknizr:
             total_tkns = 0
 
             for msg in msgs:
@@ -192,3 +217,10 @@ class Tknizr:
 
             total_tkns += 3 # Assistant indicator tokens
             return total_tkns
+
+
+    def encode_text(self, txt: str) -> list[int] | None:
+        """Encode text using the loaded tokenizer."""
+        if self.load_tknizr:
+            return self.load_tknizr.encode(txt)
+        return

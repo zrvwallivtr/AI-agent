@@ -32,25 +32,31 @@ class BasicParsers:
     def __init__(self):
         # Map formats to their parsing methods
         self.formats = {
-            # Plain text
+            # PLAIN TEXT
             ".txt": self.read_txt,
 
-            # Data & configuration formats
-            ".csv": self._read_csv,
+            # LIBREOFFICE
+            # ".odt": self._read_odt,
+            # ".ods": self._read_ods,
+            # ".odp": self._read_odp,
+
+            # MICROSOFT OFFICE
+            ".docx": self._read_docx,
             ".xlsx": self._read_xlsx,
+            # ".pptx": self._read_pptx,
+
+            # DATA & CONFIGURATION FORMATS
+            ".csv": self._read_csv,
             ".yaml": self._read_yaml,
             ".yml": self._read_yml,
             ".toml": self._read_toml,
             ".xml": self._read_xml,
             
-            # Text documents
+            # TEXT DOCUMENTS
             ".pdf": self._read_pdf,
-            ".docx": self._read_docx,
-            # xlsx, pptx
             ".epub": self._read_epub,
-            # odt, ods, odp
             
-            # Programming
+            # PROGRAMMING
             ".py": self._read_code,
             ".js": self._read_code,
             ".ts": self._read_code,
@@ -66,12 +72,31 @@ class BasicParsers:
 
 
     # =======================================================
-    # DATA & CONFIGURATION FORMATS
+    # LIBREOFFICE
     # =======================================================
 
-    def _read_csv(self, path: Path) -> str:
-        """Reads csv as plain text files."""
-        return self.read_txt(path, "csv")
+    # =======================================================
+    # MICROSOFT OFFICE
+    # =======================================================
+
+    def _read_docx(self, path: Path) -> str:
+        """Extracts structural text elements line by line from document."""
+        try:
+            import docx
+            doc = docx.Document(path)
+            paragraphs = []
+
+            for para in doc.paragraphs:
+                clean_text = para.text.strip()
+                if clean_text:
+                    paragraphs.append(clean_text)
+            
+            app_log.info("Extracted docx text content line by line: path='%s', paragraphs=%d", path, len(paragraphs))
+            return "\n".join(paragraphs)
+
+        except Exception as e:
+            app_log.error("Failed to read DOCX file: path='%s', error=%s", path, e)
+            return f"Failed to extract file content"
 
 
     def _read_xlsx(self, path: Path) -> str:
@@ -97,6 +122,15 @@ class BasicParsers:
         except Exception as e:
             app_log.error("Failed to read xlsx file: path=%s, error=%s", path, e)
             return f"Failed to extract file content"
+
+
+    # =======================================================
+    # DATA & CONFIGURATION FORMATS
+    # =======================================================
+
+    def _read_csv(self, path: Path) -> str:
+        """Reads csv as plain text files."""
+        return self.read_txt(path, "csv")
 
 
     def _read_yaml(self, path: Path) -> str:
@@ -131,26 +165,6 @@ class BasicParsers:
 
         except Exception as e:
             app_log.error("Failed to read PDF file: path=%s, error=%s", path, e)
-            return f"Failed to extract file content"
-
-
-    def _read_docx(self, path: Path) -> str:
-        """Extracts structural text elements line by line from document."""
-        try:
-            import docx
-            doc = docx.Document(path)
-            paragraphs = []
-
-            for para in doc.paragraphs:
-                clean_text = para.text.strip()
-                if clean_text:
-                    paragraphs.append(clean_text)
-            
-            app_log.info("Extracted docx text content line by line: path='%s', paragraphs=%d", path, len(paragraphs))
-            return "\n".join(paragraphs)
-
-        except Exception as e:
-            app_log.error("Failed to read DOCX file: path='%s', error=%s", path, e)
             return f"Failed to extract file content"
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Literal, Any, get_args
 
-from src.config.models import MODEL
+from src.config.models import MODEL, EMBED_MODEL
 from src.config.prompts import MEM_PROMPT, MEM_MANUAL_PROMPT
 from src.config.memory import RETRIEVE_MEM_ENTRY_LIMIT, AUTO_MEMORY_STORE_TOKENS
 from src.config.postgres import conn
@@ -48,10 +48,38 @@ class Memory:
         self.chat_logs          = chat_logs
 
         self.embed      = Embed()
-        self.emb_dim    = self.embed.emb_dim
+        self.emb_dim    = EMB_MODEL_DIMENSION[EMBED_MODEL]
         # self.model_tkns = Tokens(self.model)
 
         self._init_memory_db()
+
+
+    # ============================================================
+    # MEMORY HASH
+    # ============================================================
+
+    def _hash_memory(self, cont: str) -> str:
+        """
+        Return a SHA-256 hash of raw text content,
+        used for dedupe before embedding.
+        """
+        return hashlib.sha256(cont.encode("utf-8")).hexdigest()
+
+
+    def _is_mem_exist(self, new_hash: str) -> bool:
+        """
+        Check if the same memory was added before (same
+        hash, accross sessions). Return True
+        if a duplicate exist.
+        """
+        self.cur.execute(
+            """
+            SELECT id FROM memory WHERE content_hash = %s
+            """,
+            (new_hash,)
+        )
+        existing = self.cur.fetchone()
+        return existing is not None
 
 
     # ============================================================
@@ -123,6 +151,7 @@ class Memory:
         embeddings: list[float],
         cont_tkns: int,
         cont: str,
+        cont_hash: str,
         ctgry: str,
         extraction: Literal["manual", "auto"]
     ) -> str | None:
@@ -130,11 +159,11 @@ class Memory:
         try:
             self.cur.execute(
                 """
-                INSERT INTO memory (embeddings, prompt_tokens, content, category, extraction)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO memory (embeddings, prompt_tokens, content, content_hash, category, extraction)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id;
                 """,
-                (str(embeddings), cont_tkns, cont, ctgry, extraction)
+                (str(embeddings), cont_tkns, cont, cont_hash, ctgry, extraction)
             )
             row = self.cur.fetchone()
             self.conn.commit()
@@ -160,15 +189,23 @@ class Memory:
         extraction: Literal["manual", "auto"]
     ) -> tuple[str, int] | None:
         """Embeds texts and adds to memory logs."""
+        cont_hash = self._hash_memory(cont)
+        if self._is_mem_exist(cont_hash):
+            app_log.info("Memory already exist. Skipping")
+            return
+
         cont, embeddings, cont_tkns = self.embed.embedding_content(cont)
         if not embeddings:
             app_log.warning("Failed to generate vector embedding. No memory entry saved")
             return
 
+        cont_hash = self._hash_memory(cont)
+
         mem_id = self._add_mem_embeddings(
             embeddings=embeddings,
             cont_tkns=cont_tkns,
             cont=cont,
+            cont_hash=cont_hash,
             ctgry=ctgry,
             extraction=extraction
         )
