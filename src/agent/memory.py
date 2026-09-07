@@ -264,16 +264,27 @@ class Memory:
         return mem_dict
 
 
-    def query_similar_content(self, qry: str, qry_embeddings: list[float]) -> list[dict[str, Any]] | None:
+    def query_similar_content(
+        self, qry: str,
+        qry_embeddings: list[float],
+        min_sim: float = 0.65
+    ) -> list[dict[str, Any]] | None:
         """Queries database for similar content."""
         self.cur.execute(
             """
             SELECT content, 1 - (embeddings <=> %s) AS cosine_similarity
             FROM memory
+            WHERE 1 - (embeddings <=> %s) >= %s
             ORDER BY embeddings <=> %s ASC
             LIMIT %s;
             """,
-            (str(qry_embeddings), str(qry_embeddings), self.qry_limit)
+            (
+                str(qry_embeddings),
+                str(qry_embeddings),
+                min_sim,
+                str(qry_embeddings),
+                self.qry_limit
+            )
         )
         rows = self.cur.fetchall()
 

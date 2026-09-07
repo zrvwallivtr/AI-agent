@@ -326,7 +326,11 @@ class DocumentKnowledgeBase:
     # QUERY KNOWNLEDGE BASE
     # ==================================================
 
-    def query_similar_knowledge(self, qry: str, qry_embeddings: list[float]) -> list[dict[str, Any]] | None:
+    def query_similar_knowledge(
+        self,
+        qry: str, qry_embeddings: list[float],
+        min_sim: float = 0.65
+    ) -> list[dict[str, Any]] | None:
         """Queries knowledge base for similar content."""
         kw_dict = []
 
@@ -334,10 +338,17 @@ class DocumentKnowledgeBase:
             """
             SELECT content, metadata, 1 - (embedding <=> %s) AS cosine_similarity
             FROM knowledge_base
+            WHERE 1 - (embedding <=> %s) >= %s
             ORDER BY embedding <=> %s ASC
             LIMIT %s;
             """,
-            (str(qry_embeddings), str(qry_embeddings), self.qry_limit)
+            (
+                str(qry_embeddings),
+                str(qry_embeddings),
+                min_sim,
+                str(qry_embeddings),
+                self.qry_limit
+            )
         )
         rows = self.cur.fetchall()
 
