@@ -13,10 +13,8 @@ from src.config.models import MODEL, EMBED_MODEL
 from src.config.prompts import MEM_PROMPT, MEM_MANUAL_PROMPT
 from src.config.memory import RETRIEVE_MEM_ENTRY_LIMIT, AUTO_MEMORY_STORE_TOKENS
 from src.config.postgres import conn
-from src.agent.chat_logs import ChatLogs
-from src.agent.models.embed import Embed
-from src.agent.models.llm import LLM
-from src.agent.models.embed import Embed
+
+from src.agent import ChatLogs, LLM, Embed
 from src.models_database import EMB_MODEL_DIMENSION
 from src.logger import app_logger, prompt_logger
 

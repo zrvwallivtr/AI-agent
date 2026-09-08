@@ -6,10 +6,9 @@ import ollama
 
 from src import config
 from src.agent.models.llm import LLM
-from src.agent.tokens_handler import Tokens
 from src.logger import app_logger
-from src.tools.web_search.firewall import validate_url, SSRFError
-from src.tools.web_search.search_client import SearchClient
+from src.rag.web_search.firewall import validate_url, SSRFError
+from src.rag.web_search.search_client import SearchClient
 
 
 app_log = app_logger(f"{__name__}.app")

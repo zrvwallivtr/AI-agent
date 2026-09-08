@@ -5,8 +5,8 @@ from pathlib import Path
 
 from src.config.postgres import conn
 from src.agent.chat_logs import ChatLogs
-from src.agent.core import Agent
-from src.tools import KnowledgeBase
+from src.core import Agent
+from src.rag import KnowledgeBase
 
 
 cur = conn.cursor()

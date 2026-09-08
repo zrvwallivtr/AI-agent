@@ -5,20 +5,25 @@ from pathlib import Path
 from src.config.models import MODEL
 from src.config.prompts import MEM_RECALL_INTERPRET_PROMPT
 from src.config.postgres import conn
-from src.agent.models.llm import LLM
-from src.agent.models.embed import Embed
-# from src.agent.tokens_handler import Tokens
-from src.agent.chat_logs import ChatLogs
-from src.agent.memory import Memory
-from src.agent import format_context as fmt_cont
-from src.tools import KnowledgeBase, DocumentKnowledgeBase
+
+from src.agent import (
+    LLM,
+    Embed,
+    ChatLogs,
+    build_prompt
+)
+from src.rag import (
+    Memory,
+    KnowledgeBase,
+    DocumentKnowledgeBase
+)
 from src.logger import app_logger
 
 
 app_log = app_logger(f"{__name__}.app")
 
 
-class Command:
+class SlashCmds:
     def __init__(
         self,
         conn,
@@ -86,7 +91,7 @@ class Command:
             is_attchmnt=is_attchmnt, attch_paths=paths
         )
 
-        cmbind_prompt = fmt_cont.build_prompt(prompt=prompt, attchmnt_dict=attchmnt_dict)
+        cmbind_prompt = build_prompt(prompt=prompt, attchmnt_dict=attchmnt_dict)
         msgs.append({"role": "user", "content": cmbind_prompt})
         app_log.debug("Appended new message to current messages")
 
@@ -140,12 +145,13 @@ class Command:
                 len(attchmnt_dict),
                 self.sess_name
             )
-            for doc_path, cont in attchmnt_dict.items():
-                result = self.doc_kw_bs.embedding_paragraph_chunks_and_add_to_kw_bs(doc_path, cont)
-                if result:
-                    notify, _ = result
-                    print(notify)
-                else:
+            for doc_path, data in attchmnt_dict.items():
+                cont = data["content"]
+                format = data["format"]
+                count = self.doc_kw_bs.embed_and_add_to_kw_bs(
+                    path=doc_path, cont=cont, format=format
+                )
+                if not count:
                     app_log.warning(
                         "Failed to store attachment '%s' to session '%s' knowledge base",
                         doc_path,
@@ -153,6 +159,13 @@ class Command:
                     )
                     print("Error: Failed to embed/store attachment to knowledge base")
                     continue
+                app_log.info(
+                    "Stored attachment '%s' as %s chunks to session '%s' knowledge base",
+                    doc_path,
+                    count,
+                    self.sess_name
+                )
+                print("Attachment stored to session knowledge base")
                 # /////////////////////////////////////////////
                 # Embedding token count: emb_tkns + tkn_used
                 # /////////////////////////////////////////////
@@ -183,7 +196,7 @@ class Command:
             is_attchmnt=is_attchmnt, attch_paths=paths
         )
 
-        cmbind_prompt = fmt_cont.build_prompt(
+        cmbind_prompt = build_prompt(
             prompt=prompt, mem_list=mem_list, attchmnt_dict=attchmnt_dict
         )
 
@@ -219,12 +232,13 @@ class Command:
                 len(attchmnt_dict),
                 self.sess_name
             )
-            for doc_path, cont in attchmnt_dict.items():
-                result = self.doc_kw_bs.embedding_paragraph_chunks_and_add_to_kw_bs(doc_path, cont)
-                if result:
-                    notify, _ = result
-                    print(notify)
-                else:
+            for doc_path, data in attchmnt_dict.items():
+                cont = data["content"]
+                format = data["format"]
+                count = self.doc_kw_bs.embed_and_add_to_kw_bs(
+                    path=doc_path, cont=cont, format=format
+                )
+                if not count:
                     app_log.warning(
                         "Failed to store attachment '%s' to session '%s' knowledge base",
                         doc_path,
@@ -232,6 +246,13 @@ class Command:
                     )
                     print("Error: Failed to embed/store attachment to knowledge base")
                     continue
+                app_log.info(
+                    "Stored attachment '%s' as %s chunks to session '%s' knowledge base",
+                    doc_path,
+                    count,
+                    self.sess_name
+                )
+                print("Attachment stored to session knowledge base")
                 # /////////////////////////////////////////////
                 # Embedding token count: emb_tkns + tkn_used
                 # /////////////////////////////////////////////

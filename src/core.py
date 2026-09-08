@@ -3,17 +3,28 @@ from agent import format_context
 import ollama
 from pathlib import Path
 
-from src.config.models import MODEL, MODEL_MAX_TOKENS, EMBED_MODEL, EMBED_MAX_TOKENS
 from src.config.postgres import conn
-from src.agent.models.llm import LLM
-from src.agent.models.embed import Embed
-from src.agent.tokenizers import Tknizr
-from src.agent.chat_logs import ChatLogs
-from src.agent.memory import Memory
-from src.agent.cmd_functions import Command
-from src.agent import format_context as fmt_cont
-from src.agent.models.validation import validate_model
-from src.tools import KnowledgeBase, DocumentKnowledgeBase
+from src.config.models import (
+    MODEL,
+    MODEL_MAX_TOKENS,
+    EMBED_MODEL,
+    EMBED_MAX_TOKENS
+)
+
+from src.agent import (
+    LLM,
+    Embed,
+    validate_model,
+    Tknizr,
+    ChatLogs,
+    build_prompt
+)
+from src.rag import (
+    Memory,
+    KnowledgeBase,
+    DocumentKnowledgeBase
+)
+from src.slash_cmds import SlashCmds
 from src.logger import app_logger
 
 
@@ -71,7 +82,7 @@ class Agent:
             sess_name=self.sess_name
         )
 
-        self.cmd = Command(
+        self.slash_cmd = SlashCmds(
             conn=self.conn,
             chat_logs=self.chat_logs,
             model=model,
@@ -177,7 +188,7 @@ class Agent:
             if cmd == "/memorise":
                 app_log.debug("'/memorise' command triggered")
                 msgs.append({"role": "user", "content": user_prompt})
-                response = self.cmd.cmd_memorise(
+                response = self.slash_cmd.cmd_memorise(
                     prompt=user_prompt,
                     is_attchmnt=is_attchmnt,
                     paths=paths
@@ -190,7 +201,7 @@ class Agent:
             if cmd == "/recall":
                 app_log.debug("'/recall' command triggered")
                 msgs.append({"role": "user", "content": user_prompt})
-                response = self.cmd.cmd_recall(
+                response = self.slash_cmd.cmd_recall(
                     prompt=user_prompt,
                     is_attchmnt=is_attchmnt,
                     paths=paths
@@ -203,7 +214,7 @@ class Agent:
             if cmd == "/compress":
                 app_log.debug("'/compress' command triggered")
                 msgs.append({"role": "user", "content": user_prompt})
-                response = self.cmd.cmd_compress(
+                response = self.slash_cmd.cmd_compress(
                     prompt=user_prompt
                 )
                 if response:
@@ -256,7 +267,7 @@ class Agent:
         # Auto web search
 
         # All context combined
-        cmbind_prompt = fmt_cont.build_prompt(
+        cmbind_prompt = build_prompt(
             prompt=prompt, mem_list=mem_list, doc_list=doc_list, attchmnt_dict=attchmnt_dict
         )
         msgs.append({"role": "user", "content": cmbind_prompt})
@@ -297,8 +308,12 @@ class Agent:
                 len(attchmnt_dict),
                 self.sess_name
             )
-            for doc_path, cont in attchmnt_dict.items():
-                count = self.doc_kw_bs.embed_and_add_to_kw_bs(doc_path, cont)
+            for doc_path, data in attchmnt_dict.items():
+                cont = data["content"]
+                format = data["format"]
+                count = self.doc_kw_bs.embed_and_add_to_kw_bs(
+                    path=doc_path, cont=cont, format=format
+                )
                 if not count:
                     app_log.warning(
                         "Failed to store attachment '%s' to session '%s' knowledge base",

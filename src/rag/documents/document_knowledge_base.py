@@ -12,10 +12,10 @@ from src.config.models import MODEL
 from src.config.memory import RETRIEVE_MEM_ENTRY_LIMIT
 from src.config.files_and_directories import UPLOAD_DIR
 from src.config.postgres import conn
-from src.agent.chat_logs import ChatLogs
-from src.agent.models.embed import Embed
-from src.tools.documents.basic_parsers import BasicParsers
-from src.tools.documents.document_reader import DocumentReader
+
+from src.agent import ChatLogs, Embed
+from src.rag.documents.basic_parsers import BasicParsers
+from src.rag.documents.document_reader import DocumentReader
 from src.logger import app_logger
 
 
@@ -63,7 +63,7 @@ class DocumentKnowledgeBase:
         """
         self.cur.execute(
             """
-            SELECT content, embedding, prompt_tokens
+            SELECT content, embeddings, prompt_tokens
             FROM knowledge_base
             WHERE content_hash = %s
             LIMIT 1
@@ -74,8 +74,8 @@ class DocumentKnowledgeBase:
         if row is None:
             return None
 
-        chnk_cont, embedding, chnk_tkns = row
-        return chnk_cont, embedding, chnk_tkns
+        chnk_cont, embeddings, chnk_tkns = row
+        return chnk_cont, embeddings, chnk_tkns
 
 
     # ================================================
@@ -110,7 +110,7 @@ class DocumentKnowledgeBase:
         self,
         is_attchmnt: bool,
         attch_paths: list[Path] | None
-    ) -> dict[Path, str] | None:
+    ) -> dict[Path, dict[str, str]] | None:
         """Return content in attachment(s)."""
         if not is_attchmnt:
             return
@@ -121,13 +121,13 @@ class DocumentKnowledgeBase:
         attchmnt_dict = {}
         for path in attch_paths:
 
-            cont = self.doc_reader.read_document(path)
+            cont, format = self.doc_reader.read_document(path)
             if not cont:
                 app_log.warning("Failed to extract content from '%s'. Skipping", path.name)
                 continue
 
             app_log.info("Content extracted from '%s'", path.name)
-            attchmnt_dict[path] = cont
+            attchmnt_dict[path] = {"content": cont, "format": format}
 
         return attchmnt_dict
 
@@ -159,7 +159,7 @@ class DocumentKnowledgeBase:
         try:
             self.cur.execute(
                 """
-                INSERT INTO knowledge_base (session_id, type, embedding, prompt_tokens, content, content_hash, expires_at, metadata)
+                INSERT INTO knowledge_base (session_id, type, embeddings, prompt_tokens, content, content_hash, expires_at, metadata)
                 VALUES (%s, %s, %s::vector, %s, %s, %s, %s, %s)
                 """,
                 (
@@ -187,7 +187,12 @@ class DocumentKnowledgeBase:
     # EMBEDDING
     # ================================================
 
-    def embed_and_add_to_kw_bs(self, path: Path, cont: str | None) -> int | None:
+    def embed_and_add_to_kw_bs(
+        self,
+        path: Path,
+        cont: str | None,
+        format: str | None
+    ) -> int | None:
         """
         Uses langchain text splitters for file format accordingly,
         embed each chunks and save to knowledge base.
@@ -204,15 +209,16 @@ class DocumentKnowledgeBase:
 
         chnks = []
 
-        if not cont:
+        if not cont and not format:
             cont, format = self.doc_reader.read_document(path)
 
-            # Langchain text splitters
-            from src.agent.splitters import txt_spltr, md_spltr
-            if format == "txt":
-                chnks = txt_spltr.split_text(cont)
-            if format == "md":
-                chnks = md_spltr.split_text(cont)
+        # Langchain text splitters
+        app_log.info("Langchain Text Splitters splitting '%s' content to chunks", path.name)
+        from src.rag.splitters import txt_spltr, md_spltr
+        if format == "txt":
+            chnks = txt_spltr.split_text(cont)
+        if format == "md":
+            chnks = md_spltr.split_text(cont)
 
         if not chnks:
             return
@@ -228,28 +234,31 @@ class DocumentKnowledgeBase:
                     "Document already exists in session '%s' knowledge base. Skipping re-embed",
                     self.sess_name
                 )
-                chnk_cont, embedding, chnk_tkns = doc_chnk
+                chnk_cont, embeddings, chnk_tkns = doc_chnk
 
             else:
-                chnk_cont, embedding, chnk_tkns = self.embed.embedding_content(chnk)
+                chnk_cont, embeddings, chnk_tkns = self.embed.embedding_content(chnk)
+            hash = self._hash_content(chnk_cont)
 
             # Skip chunks that failed
-            if not embedding:
+            if not embeddings:
                 app_log.warning(
                     "Error occur in embedding chunk in '%s'. Skipping chunk", str(path)
                 )
                 continue
 
-            result = self._add_to_kw_bs(
-                doc_name=name,
-                chnk_idx=idx,
-                embeddings=embedding,
-                chnk_tkns=chnk_tkns,
-                cont=chnk_cont,
-                mime=mime,
-                size=size,
-                cont_hash=chnk_hash
-            )
+            # Skip upload if already exists
+            if not self._is_doc_cont_chunk_exist(hash):
+                result = self._add_to_kw_bs(
+                    doc_name=name,
+                    chnk_idx=idx,
+                    embeddings=embeddings,
+                    chnk_tkns=chnk_tkns,
+                    cont=chnk_cont,
+                    mime=mime,
+                    size=size,
+                    cont_hash=chnk_hash
+                )
             count += 1
 
         return count
@@ -336,10 +345,10 @@ class DocumentKnowledgeBase:
 
         self.cur.execute(
             """
-            SELECT content, metadata, 1 - (embedding <=> %s) AS cosine_similarity
+            SELECT content, metadata, 1 - (embeddings <=> %s) AS cosine_similarity
             FROM knowledge_base
-            WHERE 1 - (embedding <=> %s) >= %s
-            ORDER BY embedding <=> %s ASC
+            WHERE 1 - (embeddings <=> %s) >= %s
+            ORDER BY embeddings <=> %s ASC
             LIMIT %s;
             """,
             (

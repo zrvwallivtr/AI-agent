@@ -3,6 +3,7 @@ import logging
 import logging.config
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
 from src.config.files_and_directories import APP_LOG_FILE, PROMPT_LOG_FILE
 
 

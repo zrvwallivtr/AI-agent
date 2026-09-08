@@ -8,10 +8,10 @@ from typing import Any, Literal
 
 from src.config.models import EMBED_MODEL
 from src.config.postgres import conn
-from src.agent.chat_logs import ChatLogs
-from src.agent.models.embed import Embed
+
+from src.agent import ChatLogs, Embed
 from src.models_database import EMB_MODEL_DIMENSION
-from src.tools.documents.document_knowledge_base import DocumentKnowledgeBase
+from src.rag.documents.document_knowledge_base import DocumentKnowledgeBase
 from src.logger import app_logger
 
 
@@ -64,7 +64,7 @@ class KnowledgeBase:
                 created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 expires_at      TIMESTAMPTZ,    -- Only applicable for web search contents
                 type            VARCHAR(20) NOT NULL,
-                embedding       VECTOR({dimension}),
+                embeddings      VECTOR({dimension}),
                 prompt_tokens   INTEGER NOT NULL,
                 content         TEXT NOT NULL,
                 content_hash    TEXT,   -- Only applicable for web search contents
@@ -75,11 +75,11 @@ class KnowledgeBase:
         self.cur.execute(create_kw_bs_tbl)
 
         # HNSW index - must match the distance operator used in queries
-        app_log.debug("Initialising index 'idx_kw_bs_embedding' on table 'knowledge_base' using HNSW")
+        app_log.debug("Initialising index 'idx_kw_bs_embeddings' on table 'knowledge_base' using HNSW")
         self.cur.execute(
             """
-            CREATE INDEX IF NOT EXISTS idx_kw_bs_embedding
-            ON knowledge_base USING hnsw (embedding vector_cosine_ops);
+            CREATE INDEX IF NOT EXISTS idx_kw_bs_embeddings
+            ON knowledge_base USING hnsw (embeddings vector_cosine_ops);
             """
         )
 

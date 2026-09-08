@@ -3,8 +3,9 @@ from pathlib import Path
 
 from src.config.files_and_directories import UPLOAD_DIR
 from src.config.documents import DOCLING_DEFAULT, ENABLE_DOCLING
-from src.tools.documents.basic_parsers import BasicParsers
-from src.tools.documents.docling_parsers import DoclingParsers
+
+from src.rag.documents.basic_parsers import BasicParsers
+from src.rag.documents.docling_parsers import DoclingParsers
 from src.logger import app_logger
 
 

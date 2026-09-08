@@ -2,6 +2,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 from src.config.files_and_directories import UPLOAD_DIR
+
 from src.logger import app_logger
 
 
