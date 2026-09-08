@@ -33,15 +33,11 @@ class DocumentKnowledgeBase:
         self.cur    = self.conn.cursor()
 
         self.sess_name = sess_name
-        self.qry_limit  = RETRIEVE_MEM_ENTRY_LIMIT
+        self.qry_limit = RETRIEVE_MEM_ENTRY_LIMIT
 
-        self.model          = MODEL
-        self.chat_logs      = chat_logs
-        self.doc_reader     = DocumentReader()
-        self.embed          = Embed()
-
-        # self.doc_metadata   = self._get_all_documents_metadata()
-        # self.doc_names      = self._get_all_documents_names()
+        self.chat_logs  = chat_logs
+        self.doc_reader = DocumentReader()
+        self.embed      = Embed()
 
 
     # ================================================

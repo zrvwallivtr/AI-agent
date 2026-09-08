@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Literal, Any, get_args
 
-from src.config.models import MODEL, EMBED_MODEL
+from src.config.models import MEM_MODEL, EMBED_MODEL
 from src.config.prompts import MEM_PROMPT, MEM_MANUAL_PROMPT
 from src.config.memory import RETRIEVE_MEM_ENTRY_LIMIT, AUTO_MEMORY_STORE_TOKENS
 from src.config.postgres import conn
@@ -39,7 +39,7 @@ class Memory:
         self.cur                = self.conn.cursor()
         self.sess_name          = sess_name
         self.project            = project
-        self.model              = MODEL
+        self.model              = MEM_MODEL
         self.mem_prompt         = MEM_PROMPT
         self.mem_manual_prompt  = MEM_MANUAL_PROMPT
         self.qry_limit          = RETRIEVE_MEM_ENTRY_LIMIT
@@ -47,7 +47,6 @@ class Memory:
 
         self.embed      = Embed()
         self.emb_dim    = EMB_MODEL_DIMENSION[EMBED_MODEL]
-        # self.model_tkns = Tokens(self.model)
 
         self._init_memory_db()
 
