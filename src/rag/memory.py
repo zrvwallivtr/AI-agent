@@ -1,7 +1,6 @@
 import psycopg2
 import json
 import uuid
-import ollama
 import hashlib
 import re
 from psycopg2 import sql
@@ -262,7 +261,8 @@ class Memory:
 
 
     def query_similar_content(
-        self, qry: str,
+        self,
+        qry: str,
         qry_embeddings: list[float],
         min_sim: float = 0.65
     ) -> list[dict[str, Any]] | None:

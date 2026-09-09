@@ -1,9 +1,9 @@
-import ollama
 from pathlib import Path
 from tokenizers import Tokenizer
 
 from src.config.files_and_directories import TOKENIZERS_DIR, _cfg
 from src.config.models import FALLBACK_TOKENIZER
+from src.agent.models import olma_client
 from src import models_database
 from src.logger import app_logger
 
@@ -76,7 +76,7 @@ def install_tokenizers():
 
     # === TOKENIZER INSTALL FROM LIST ==================
 
-    installed_models = ollama.list().models
+    installed_models = olma_client.list().models
 
     for installed_model in installed_models:
         model_name = installed_model.model

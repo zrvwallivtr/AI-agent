@@ -2,6 +2,7 @@ import argparse
 from pathlib import Path
 
 from src.config.models import MODEL
+from agent.models.ollama import ollama_pull_model
 from src.cli.flag_functions import General, Session, File
 
 
@@ -32,8 +33,14 @@ def main():
     )
 
     parser.add_argument(
-        "--installed-models",
+        "--install-model",
         "-i",
+        metavar=("MODEL_NAME"),
+        help=f"Install specified model"
+    )
+
+    parser.add_argument(
+        "--installed-models",
         action="store_true",
         help="List all installed ollama models"
     )
@@ -144,8 +151,12 @@ def main():
         return True
 
     # =================================================================
-    # LIST INSTALLED MODELS
+    # INSTALL MODELS
     # =================================================================
+
+    if args.install_model:
+        ollama_pull_model(args.install_model)
+        return
 
     if args.installed_models:
         General.installed_models()

@@ -1,9 +1,9 @@
 import psycopg2
-import ollama
 from typing_extensions import Doc
 from pathlib import Path
 
 from src.config.postgres import conn
+from src.agent.models.ollama import olma_client
 from src.agent.chat_logs import ChatLogs
 from src.core import Agent
 from src.rag import KnowledgeBase
@@ -92,7 +92,7 @@ class General:
 
     @staticmethod
     def installed_models():
-        model_list = ollama.list()
+        model_list = olma_client.list()
 
         print("Installed models:")
         for model in model_list.get("models", []):

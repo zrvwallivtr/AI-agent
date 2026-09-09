@@ -1,6 +1,5 @@
 from operator import is_
 from agent import format_context
-import ollama
 from pathlib import Path
 
 from src.config.postgres import conn
@@ -12,6 +11,7 @@ from src.config.models import (
 )
 
 from src.agent import (
+    olma_client,
     LLM,
     Embed,
     validate_model,
@@ -53,7 +53,6 @@ class Agent:
         project: str | None = None
     ):
         model = MODEL if model is None else model
-        validate_model(model)
 
         if MODEL_MAX_TOKENS:
             self.tknizr = Tknizr(model, MODEL_MAX_TOKENS)
@@ -107,7 +106,7 @@ class Agent:
         """Check if model is installed via Ollama."""
         try:
             # Fetch all downloaded models
-            local_models = [m['model'] for m in ollama.list().get('models', [])]
+            local_models = [m['model'] for m in olma_client.list().get('models', [])]
 
             # Check match
             unknown_models = []

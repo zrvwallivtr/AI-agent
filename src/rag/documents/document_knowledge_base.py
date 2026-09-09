@@ -1,5 +1,4 @@
 import psycopg2
-import ollama
 import json
 import mimetypes
 import hashlib

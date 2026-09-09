@@ -1,4 +1,5 @@
 import sys
+import os
 from typing import Any
 from pathlib import Path
 
@@ -67,6 +68,8 @@ def _set_model_tokens(
 
     return model, model_max_tokens
 
+
+OLLAMA_HOST = _cfg["models"]["ollama_host"]
 
 MODEL, MODEL_MAX_TOKENS         = _set_model_tokens(_cfg, CONFIG_FILE, "chat", "chat_max_tokens")
 MEM_MODEL, MEM_MODEL_MAX_TOKENS = _set_model_tokens(_cfg, CONFIG_FILE, "memory", "memory_max_tokens")

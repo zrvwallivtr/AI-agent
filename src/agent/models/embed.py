@@ -1,6 +1,5 @@
-import ollama
-
 from src.config.models import EMBED_MODEL
+from src.agent.models.ollama import olma_client
 from models_database import EMB_MODEL_DIMENSION
 
 
@@ -12,7 +11,7 @@ class Embed:
     def embedding_content(self, cont: str) -> tuple[str, list[float], int]:
         """Generate embedding from given texts."""
         try:
-            response = ollama.embed(model=self.model, input=cont)
+            response = olma_client.embed(model=self.model, input=cont)
             embeddings = response["embeddings"][0]
             if not embeddings:
                 return "Error: Model failed to generate vector embedding", [], 0

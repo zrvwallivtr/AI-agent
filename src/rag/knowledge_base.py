@@ -1,5 +1,4 @@
 from logging import debug
-import ollama
 import json
 import mimetypes
 from psycopg2 import sql

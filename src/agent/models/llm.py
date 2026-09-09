@@ -3,6 +3,8 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 
+from config.models import OLLAMA_HOST
+from src.agent.models.ollama import olma_client
 from src.logger import app_logger, prompt_logger
 
 
@@ -52,7 +54,7 @@ class LLM:
         # Send message to the model
         if msgs:
             prompt_log.info(msgs[-1].get("content", ""))
-        stream = ollama.chat(model=model, messages=msgs, stream=True)
+        stream = olma_client.chat(model=model, messages=msgs, stream=True)
 
         # Stream model output in markdown
         for chunk in stream:
@@ -127,7 +129,7 @@ class LLM:
         prompt_log.info(system_prompt)
         prompt_log.info(msgs[-1].get("content", ""))
 
-        response = ollama.chat(model=model, messages=msgs)
+        response = olma_client.chat(model=model, messages=msgs)
         content = response.message.content
         p_tkns = getattr(response, "prompt_eval_count", 0) or 0
         o_tkns = getattr(response, "eval_count", 0) or 0
