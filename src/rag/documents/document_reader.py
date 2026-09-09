@@ -1,8 +1,7 @@
 from pathlib import Path
 
-
-from src.config.files_and_directories import UPLOAD_DIR
-from src.config.documents import DOCLING_DEFAULT, ENABLE_DOCLING
+from src.config import files_and_directories as files_n_dir
+from src.config import documents
 
 from src.rag.documents.basic_parsers import BasicParsers
 from src.rag.documents.docling_parsers import DoclingParsers
@@ -10,6 +9,10 @@ from src.logger import app_logger
 
 
 app_log = app_logger(f"{__name__}.app")
+
+UPLOAD_DIR      = files_n_dir.UPLOAD_DIR
+DOCLING_DEFAULT = documents.DOCLING_DEFAULT
+ENABLE_DOCLING  = documents.ENABLE_DOCLING
 
 
 class PathTraversalError(Exception):

@@ -2,13 +2,14 @@ import psycopg2
 from typing_extensions import Doc
 from pathlib import Path
 
-from src.config.postgres import conn
+from src.config import postgres
+
 from src.agent.models.ollama import olma_client
 from src.agent.chat_logs import ChatLogs
 from src.core import Agent
 from src.rag import KnowledgeBase
 
-
+conn = postgres.conn
 cur = conn.cursor()
 
 

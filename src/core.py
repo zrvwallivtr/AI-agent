@@ -14,7 +14,6 @@ from src.agent import (
     olma_client,
     LLM,
     Embed,
-    validate_model,
     Tknizr,
     ChatLogs,
     build_prompt

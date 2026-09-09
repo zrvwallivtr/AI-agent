@@ -1,6 +1,9 @@
-from src.config.models import EMBED_MODEL
+from src.config import models
 from src.agent.models.ollama import olma_client
 from models_database import EMB_MODEL_DIMENSION
+
+
+EMBED_MODEL = models.EMBED_MODEL
 
 
 class Embed:

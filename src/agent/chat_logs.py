@@ -5,9 +5,10 @@ import uuid
 from pathlib import Path
 from typing import Literal, Any
 
-from src.config.models import MODEL
-from src.config.prompts import SYS_PROMPT, COMPRESS_PROMPT
-from src.config.postgres import conn
+from src.config import models
+from src.config import prompts
+from src.config import postgres
+
 from src.agent.models.llm import LLM
 from src.agent.format_context import build_prompt
 from src.logger import app_logger
@@ -15,11 +16,15 @@ from src.logger import app_logger
 
 app_log = app_logger(f"{__name__}.app")
 
+MODEL           = models.MODEL
+SYS_PROMPT      = prompts.SYS_PROMPT
+COMPRESS_PROMPT = prompts.COMPRESS_PROMPT
+
 
 class ChatLogs:
     def __init__(self, conn, sess_name: str | None = None):
-        self.conn = conn
-        self.cur = self.conn.cursor()
+        self.conn   = conn
+        self.cur    = self.conn.cursor()
 
         self.model      = MODEL
         self.sys_prompt = SYS_PROMPT

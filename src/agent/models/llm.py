@@ -3,7 +3,6 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 
-from config.models import OLLAMA_HOST
 from src.agent.models.ollama import olma_client
 from src.logger import app_logger, prompt_logger
 

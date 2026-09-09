@@ -1,9 +1,13 @@
 import argparse
 from pathlib import Path
 
-from src.config.models import MODEL
+from src.config import models
+
 from agent.models.ollama import ollama_pull_model
 from src.cli.flag_functions import General, Session, File
+
+
+MODEL = models.MODEL
 
 
 def main():
@@ -214,7 +218,7 @@ def main():
 
     if args.list_files:
         from src.agent.chat_logs import ChatLogs
-        from src.tools import DocumentKnowledgeBase
+        from src.rag  import DocumentKnowledgeBase
         from src.config.postgres import conn
         chat_logs = ChatLogs(conn=conn, sess_name=args.session)
         doc_kw_bs = DocumentKnowledgeBase(conn=conn, chat_logs=chat_logs, sess_name=args.session)

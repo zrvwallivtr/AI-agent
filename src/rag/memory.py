@@ -8,10 +8,10 @@ from pathlib import Path
 from datetime import datetime
 from typing import Literal, Any, get_args
 
-from src.config.models import MEM_MODEL, EMBED_MODEL
-from src.config.prompts import MEM_PROMPT, MEM_MANUAL_PROMPT
-from src.config.memory import RETRIEVE_MEM_ENTRY_LIMIT, AUTO_MEMORY_STORE_TOKENS
-from src.config.postgres import conn
+from src.config import models
+from src.config import prompts
+from src.config import memory
+from src.config import postgres
 
 from src.agent import ChatLogs, LLM, Embed
 from src.models_database import EMB_MODEL_DIMENSION
@@ -21,9 +21,15 @@ from src.logger import app_logger, prompt_logger
 app_log     = app_logger(f"{__name__}.app")
 prompt_log  = prompt_logger(f"{__name__}.prompt")
 
-CATEGORY_TYPES = Literal["preference", "stack", "fact", "project", "instruction", "correction"]
+MEM_MODEL                   = models.MEM_MODEL
+EMBED_MODEL                 = models.EMBED_MODEL
+MEM_PROMPT                  = prompts.MEM_PROMPT
+MEM_MANUAL_PROMPT           = prompts.MEM_MANUAL_PROMPT
+RETRIEVE_MEM_ENTRY_LIMIT    = memory.RETRIEVE_MEM_ENTRY_LIMIT
+AUTO_MEMORY_STORE_TOKENS    = memory.AUTO_MEMORY_STORE_TOKENS
 
-CATEGORIES = list(get_args(CATEGORY_TYPES))
+CATEGORY_TYPES  = Literal["preference", "stack", "fact", "project", "instruction", "correction"]
+CATEGORIES      = list(get_args(CATEGORY_TYPES))
 
 
 class Memory:

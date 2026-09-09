@@ -1,8 +1,10 @@
 import ollama
 import subprocess
 
-from config.models import OLLAMA_HOST 
+from src.config import models
 
+
+OLLAMA_HOST = models.OLLAMA_HOST
 
 olma_client = ollama.Client(host=OLLAMA_HOST)
 

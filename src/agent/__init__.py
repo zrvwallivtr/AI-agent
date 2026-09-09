@@ -3,7 +3,6 @@ from src.agent.models import (
     ollama_pull_model,
     LLM,
     Embed,
-    validate_model
 )
 from src.agent.chat_logs import ChatLogs
 from src.agent.tokenizers import Tknizr
@@ -15,7 +14,6 @@ __all__ = [
     "ollama_pull_model",
     "LLM",
     "Embed",
-    "validate_model",
     "ChatLogs",
     "Tknizr",
     "build_prompt"

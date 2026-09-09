@@ -1,12 +1,14 @@
 from pathlib import Path
 from bs4 import BeautifulSoup
 
-from src.config.files_and_directories import UPLOAD_DIR
+from src.config import files_and_directories as files_n_dir
 
 from src.logger import app_logger
 
 
 app_log = app_logger(f"{__name__}.app")
+
+UPLOAD_DIR = files_n_dir.UPLOAD_DIR
 
 
 class PathTraversalError(Exception):

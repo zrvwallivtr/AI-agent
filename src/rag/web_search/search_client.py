@@ -1,30 +1,41 @@
 import psycopg2
 import requests
 
-from src import config
+from src.config import web_search
+from src.config import postgres
+
 from src.agent.chat_logs import ChatLogs
+
+
+SEARCH_ENG  = web_search.SEARCH_ENG
+MAX_RESULTS = web_search.MAX_RESULTS
+DBNAME      = postgres.DBNAME
+USER        = postgres.USER
+PASSWORD    = postgres.PASSWORD
+HOST        = postgres.HOST
+PORT        = postgres.PORT
 
 
 class SearchClient:
     def __init__(
         self,
-        bs_url: str = config.SEARCH_ENG,
+        conn,
+        bs_url: str = SEARCH_ENG,
         sess_name: str | None = None
     ):
         self.conn   = psycopg2.connect(
-            dbname=config.DBNAME,
-            user=config.USER,
-            password=config.PASSWORD,
-            host=config.HOST,
-            port=config.PORT
+            dbname=DBNAME,
+            user=USER,
+            password=PASSWORD,
+            host=HOST,
+            port=PORT
         )
         self.cur    = self.conn.cursor()
 
         self.bs_url = bs_url
         self.sess_name = sess_name
 
-        self.chat_logs = ChatLogs(sess_name=self.sess_name)
-        self.sess_id = self.chat_logs.sess_id
+        self.chat_logs = ChatLogs(conn = conn, sess_name=self.sess_name)
 
         self._init_search_logs_db()
 
@@ -51,7 +62,7 @@ class SearchClient:
     # SEARCH
     # ===================================================
 
-    def get_surface_content(self, qry: str, max_results: int = config.MAX_RESULTS) -> list[dict] | None:
+    def get_surface_content(self, qry: str, max_results: int = MAX_RESULTS) -> list[dict] | None:
         """Get url, title and snippet from query results."""
         params = {"q": qry, "format": "json", "language": "en", "categories": "general"}
 
@@ -98,7 +109,7 @@ class SearchClient:
                 INSERT INTO search_logs (session_id, query, url, title, snippet)
                 VALUES (%s, %s, %s, %s, %s);
                 """,
-                (self.sess_id, qry, url, title, snippet)
+                (self.chat_logs.get_sess_id, qry, url, title, snippet)
             )
             self.conn.commit()
 
@@ -110,7 +121,7 @@ class SearchClient:
             DELETE FROM search_logs
             WHERE session_id = %s;
             """,
-            (self.sess_id,)
+            (self.chat_logs.get_sess_id,)
         )
         del_count = self.cur.rowcount
         self.conn.commit()

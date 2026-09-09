@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any
 from datetime import datetime, timedelta, timezone
 
-from src.config.models import MODEL
-from src.config.memory import RETRIEVE_MEM_ENTRY_LIMIT
-from src.config.files_and_directories import UPLOAD_DIR
-from src.config.postgres import conn
+from src.config import models
+from src.config import memory
+from src.config import files_and_directories as files_n_dir
+from src.config import postgres
 
 from src.agent import ChatLogs, Embed
 from src.rag.documents.basic_parsers import BasicParsers
@@ -19,6 +19,9 @@ from src.logger import app_logger
 
 
 app_log = app_logger(f"{__name__}.app")
+
+RETRIEVE_MEM_ENTRY_LIMIT    = memory.RETRIEVE_MEM_ENTRY_LIMIT
+UPLOAD_DIR                  = files_n_dir.UPLOAD_DIR
 
 
 class DocumentKnowledgeBase:

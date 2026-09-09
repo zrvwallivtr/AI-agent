@@ -1,8 +1,9 @@
 from pathlib import Path
 from tokenizers import Tokenizer
 
-from src.config.files_and_directories import TOKENIZERS_DIR, _cfg
-from src.config.models import FALLBACK_TOKENIZER
+from src.config import models
+from src.config import files_and_directories as fls_n_dir
+
 from src.agent.models import olma_client
 from src import models_database
 from src.logger import app_logger
@@ -37,6 +38,9 @@ MODEL_NAME_TO_HF_TOKENIZER = {
 }
 
 app_log = app_logger(__name__)
+
+TOKENIZERS_DIR      = fls_n_dir.TOKENIZERS_DIR
+FALLBACK_TOKENIZER  = models.FALLBACK_TOKENIZER
 
 
 # =============================================================

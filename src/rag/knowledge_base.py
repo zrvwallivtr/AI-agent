@@ -5,8 +5,7 @@ from psycopg2 import sql
 from pathlib import Path
 from typing import Any, Literal
 
-from src.config.models import EMBED_MODEL
-from src.config.postgres import conn
+from src.config import models
 
 from src.agent import ChatLogs, Embed
 from src.models_database import EMB_MODEL_DIMENSION
@@ -15,6 +14,8 @@ from src.logger import app_logger
 
 
 app_log = app_logger(f"{__name__}.app")
+
+EMBED_MODEL = models.EMBED_MODEL
 
 
 class KnowledgeBase:

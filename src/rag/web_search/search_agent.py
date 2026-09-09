@@ -2,16 +2,23 @@ import datetime
 import requests
 import re
 import socket
-import ollama
 
-from src import config
-from src.agent.models.llm import LLM
+from src.config import models
+from src.config import prompts
+
+from src.agent import LLM
+from src.agent import Tknizr
 from src.logger import app_logger
 from src.rag.web_search.firewall import validate_url, SSRFError
 from src.rag.web_search.search_client import SearchClient
 
 
 app_log = app_logger(f"{__name__}.app")
+
+
+MODEL                   = models.MODEL
+SEARCH_OR_NOT_PROMPT    = prompts.SEARCH_OR_NOT_PROMPT
+QUERY_PROMPT            = prompts.QUERY_PROMPT
 
 
 def is_connected(host="1.1.1.1", port=53, timeout=3):
@@ -36,9 +43,9 @@ def is_connected(host="1.1.1.1", port=53, timeout=3):
 
 class QueryRouter:
     def __init__(self):
-        self.model  = config.MODEL
-        self.prompt = config.SEARCH_OR_NOT_PROMPT
-        self.tokens = Tokens(model=self.model)
+        self.model  = MODEL
+        self.prompt = SEARCH_OR_NOT_PROMPT
+        self.tokens = Tknizr(model=self.model)
 
 
     def search_or_not(self, context: list[dict], prompt: str) -> tuple[bool, int, int]:
@@ -61,9 +68,9 @@ class QueryRouter:
 
 class QueryGenerator:
     def __init__(self):
-        self.model  = config.MODEL
-        self.prompt = config.QUERY_PROMPT
-        self.tokens = Tokens(model=self.model)
+        self.model  = MODEL
+        self.prompt = QUERY_PROMPT
+        self.tokens = Tknizr(model=self.model)
 
 
     def _search_query_check(self, search_query: str) -> str:
@@ -113,8 +120,8 @@ class QueryGenerator:
 class Search:
     def __init__(self, sess_name: str | None = None):
         self.sess_name  = sess_name
-        self.model      = config.MODEL
-        self.tokens     = Tokens(model=self.model)
+        self.model      = MODEL
+        self.tokens     = Tknizr(model=self.model)
         self.s_client   = SearchClient(sess_name=self.sess_name)
         self.qry_rout   = QueryRouter()
         self.qry_gen    = QueryGenerator()
