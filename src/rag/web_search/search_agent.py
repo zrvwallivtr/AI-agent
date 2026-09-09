@@ -6,8 +6,8 @@ import socket
 from src.config import models
 from src.config import prompts
 
-from src.agent import LLM
-from src.agent import Tknizr
+from src.agent import LLM, Tknizr
+from src.rag.web_search.query_manager import search_or_not, generate_query
 from src.logger import app_logger
 from src.rag.web_search.firewall import validate_url, SSRFError
 from src.rag.web_search.search_client import SearchClient
@@ -21,7 +21,7 @@ SEARCH_OR_NOT_PROMPT    = prompts.SEARCH_OR_NOT_PROMPT
 QUERY_PROMPT            = prompts.QUERY_PROMPT
 
 
-def is_connected(host="1.1.1.1", port=53, timeout=3):
+def is_connected(host="1.1.1.1", port=53, timeout=3) -> bool:
     """
     Returns True if the system can connect to the host/port,
     otherwise returns false.
@@ -41,105 +41,33 @@ def is_connected(host="1.1.1.1", port=53, timeout=3):
         return False
 
 
-class QueryRouter:
-    def __init__(self):
-        self.model  = MODEL
-        self.prompt = SEARCH_OR_NOT_PROMPT
-        self.tokens = Tknizr(model=self.model)
-
-
-    def search_or_not(self, context: list[dict], prompt: str) -> tuple[bool, int, int]:
-        """
-        Query model to decide whether a question requires search or not.
-        Returns either 'True' or 'False'.
-        """
-        output, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
-            model=self.model,
-            system_prompt=self.prompt,
-            context=context,
-            prompt=prompt
-        )
-
-        if 'true' in output.lower():
-            return True, p_tkns, o_tkns
-        else:
-            return False, p_tkns, o_tkns
-
-
-class QueryGenerator:
-    def __init__(self):
-        self.model  = MODEL
-        self.prompt = QUERY_PROMPT
-        self.tokens = Tknizr(model=self.model)
-
-
-    def _search_query_check(self, search_query: str) -> str:
-        """
-        Check format of the search query, remove '"' if it
-        exist at the start and end of the query.
-        """
-        if not search_query:
-            return ""
-
-        # Get only the first line of output
-        search_query = search_query.strip().split('\n')[0]
-
-        # Remove advanced operators that trigger WAF blocks
-        bad_operators = ["inurl:", "site:", "intitle:", "filetype:", "sorted:newest", "sorted:"]
-        for operator in bad_operators:
-            search_query = search_query.replace(operator, "")
-
-        # Remove quotes, colons and stray punctuation
-        search_query = search_query.replace('"', "").replace("'", "").replace(":", "")
-        search_query = search_query.strip('`* ')
-
-        # Replace any double space into single space
-        search_query = re.sub(r"\s+", " ", search_query)
-
-        return search_query
-
-
-    def generate_query(self, context: list[dict], prompt: str) -> tuple[str, int, int]:
-        """Generate query from user input with dynamic date injection."""
-        # Get current date
-        current_date = datetime.datetime.now().strftime("%A, %d %B %Y")
-
-        # Update {{current_date}} in 'query_prompt' to actual date
-        live_query_prompt = self.prompt.replace("{{current_date}}", current_date)
-
-        query, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
-            model=self.model,
-            system_prompt=live_query_prompt,
-            context=context,
-            prompt=prompt
-        )
-
-        return self._search_query_check(query), p_tkns, o_tkns
-
-
-class Search:
-    def __init__(self, sess_name: str | None = None):
+class SearchAgent:
+    def __init__(self, conn, sess_name: str | None = None):
         self.sess_name  = sess_name
         self.model      = MODEL
-        self.tokens     = Tknizr(model=self.model)
-        self.s_client   = SearchClient(sess_name=self.sess_name)
-        self.qry_rout   = QueryRouter()
-        self.qry_gen    = QueryGenerator()
+        # self.tokens     = Tknizr(model=self.model)
+        self.s_client   = SearchClient(conn=conn, sess_name=self.sess_name)
 
 
-    def gen_query_and_get_surface_content(
+    def query_surface_content(
         self,
         context: list[dict],
         prompt: str
-    ) -> list[dict] | None:
+    ) -> tuple[list[dict], int, int] | None:
         """
         Search web, outputing custom max results and
         store results into a temporary file.
         """
-        qry, _, _ = self.qry_gen.generate_query(context, prompt)
+        if not is_connected():
+            print("Failed to search online content: Internet not connected")
+            return
+
+        qry, p_tkns, o_tkns = generate_query(
+            model=self.model, context=context, prompt=prompt
+        )
 
         surf_cont = self.s_client.get_surface_content(qry=qry)
         if surf_cont:
             self.s_client.add_search_logs(qry=qry, results=surf_cont)
-            return surf_cont
+            return surf_cont, p_tkns, o_tkns
         return

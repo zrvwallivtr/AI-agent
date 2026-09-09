@@ -59,41 +59,6 @@ class SearchClient:
 
 
     # ===================================================
-    # SEARCH
-    # ===================================================
-
-    def get_surface_content(self, qry: str, max_results: int = MAX_RESULTS) -> list[dict] | None:
-        """Get url, title and snippet from query results."""
-        params = {"q": qry, "format": "json", "language": "en", "categories": "general"}
-
-        # Generic user-agent to prevent basic anti-bot blocking
-        headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-
-        try:
-            response = requests.get(
-                f"{self.bs_url}/search",
-                params=params,
-                headers=headers,
-                timeout=10,
-            )
-            response.raise_for_status()
-            results = response.json().get("results", [])
-            return [
-                {
-                    "url": r["url"],
-                    "title": r["title"],
-                    "snippet": r.get("content", "")
-                } for r in results[:max_results]
-            ]
-
-        except Exception as e:
-            print(f"Search failed: {e}")
-            return
-
-
-    # ===================================================
     # SEARCH LOGS
     # ===================================================
 
@@ -109,7 +74,7 @@ class SearchClient:
                 INSERT INTO search_logs (session_id, query, url, title, snippet)
                 VALUES (%s, %s, %s, %s, %s);
                 """,
-                (self.chat_logs.get_sess_id, qry, url, title, snippet)
+                (self.chat_logs.get_sess_id(), qry, url, title, snippet)
             )
             self.conn.commit()
 
@@ -129,3 +94,39 @@ class SearchClient:
         if del_count == 0:
             return f"Failed to clear search log(s): Search logs or session '{self.sess_name}' does not exists"
         return f"Cleared session '{self.sess_name}' search log(s)"
+
+
+    # ===================================================
+    # SEARCH
+    # ===================================================
+
+    def get_surface_content(self, qry: str, max_results: int = MAX_RESULTS) -> list[dict] | None:
+        """Get url, title and snippet from query results."""
+        params = {"q": qry, "format": "json", "language": "en", "categories": "general"}
+
+        # Generic user-agent to prevent basic anti-bot blocking
+        headers = {
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+
+        try:
+            response = requests.get(
+                f"{self.bs_url}/search",
+                params=params,
+                headers=headers,
+                timeout=10,
+            )
+            print(response)
+            results = response.json().get("results", [])
+            print(results)
+            return [
+                {
+                    "url": r["url"],
+                    "title": r["title"],
+                    "snippet": r.get("content", "")
+                } for r in results[:max_results]
+            ]
+
+        except Exception as e:
+            print(f"Search failed: {e}")
+            return

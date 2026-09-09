@@ -83,7 +83,6 @@ class Agent:
         self.slash_cmd = SlashCmds(
             conn=self.conn,
             chat_logs=self.chat_logs,
-            model=model,
             sess_name=self.sess_name,
             project=project
         )
@@ -201,8 +200,6 @@ class Agent:
                 msgs.append({"role": "user", "content": user_prompt})
                 response = self.slash_cmd.cmd_recall(
                     prompt=user_prompt,
-                    is_attchmnt=is_attchmnt,
-                    paths=paths
                 )
                 if response:
                     print(response)
@@ -220,24 +217,18 @@ class Agent:
                 return
                 # // END HERE //
 
-            # if cmd == "/search":
-            #     logger.info("'/search' command tirggered")
-            #     # User's question were saved
-            #     messages.append({"role": "user", "content": user_prompt})
-            #     response = self.command.cmd_search(
-            #         prompt=user_prompt,
-            #         enable_attachments=enable_attachments,
-            #         file_paths=file_paths
-            #     )
-            #     if response:
-            #         print(response)
-            #     self.memory.toggle_auto_store_memory_entries(
-            #         enable_auto_memory_store= True,
-            #         model_max_tokens=self.get_model_max_tokens,
-            #         context=self.chat.to_llm()
-            #     )
-            #     return
-                # // End here //
+            if cmd == "/search":
+                app_log.debug("'/search' command tirggered")
+                # User's question were saved
+                response = self.slash_cmd.cmd_search(
+                    prompt=user_prompt,
+                    is_attchmnt=is_attchmnt,
+                    paths=paths
+                )
+                if response:
+                    print(response)
+                return
+              # // End here //
 
         # === FULL CONTEXT ======================================
 
@@ -269,7 +260,6 @@ class Agent:
             prompt=prompt, mem_list=mem_list, doc_list=doc_list, attchmnt_dict=attchmnt_dict
         )
         msgs.append({"role": "user", "content": cmbind_prompt})
-        app_log.debug("Appended new message to current messages")
 
         # === MODEL ANSWER ======================================
 

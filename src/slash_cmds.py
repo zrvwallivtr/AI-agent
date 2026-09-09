@@ -2,9 +2,8 @@ from re import search
 from agent import format_context
 from pathlib import Path
 
-from src.config.models import MODEL
-from src.config.prompts import MEM_RECALL_INTERPRET_PROMPT
-from src.config.postgres import conn
+from src.config import models
+from src.config import prompts
 
 from src.agent import (
     LLM,
@@ -15,12 +14,17 @@ from src.agent import (
 from src.rag import (
     Memory,
     KnowledgeBase,
-    DocumentKnowledgeBase
+    DocumentKnowledgeBase,
+    SearchAgent,
+    generate_query
 )
 from src.logger import app_logger
 
 
 app_log = app_logger(f"{__name__}.app")
+
+MODEL                       = models.MODEL
+MEM_RECALL_INTERPRET_PROMPT = prompts.MEM_RECALL_INTERPRET_PROMPT
 
 
 class SlashCmds:
@@ -28,12 +32,10 @@ class SlashCmds:
         self,
         conn,
         chat_logs: ChatLogs,
-        model: str | None = None,
         sess_name: str | None = None,
         project: str | None = None
     ):
         self.conn       = conn
-        self.model      = model
         self.sess_name  = sess_name
         self.project    = project
         self.chat_logs  = chat_logs
@@ -41,24 +43,20 @@ class SlashCmds:
         self.embed      = Embed()
 
         self.mem = Memory(
-            conn=self.conn,
-            chat_logs=self.chat_logs,
-            project=self.project
+            conn=self.conn, chat_logs=self.chat_logs, project=self.project
         )
 
         self.kw_bs = KnowledgeBase(
-            conn=self.conn,
-            chat_logs=self.chat_logs,
-            sess_name=self.sess_name
+            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
         )
 
         self.doc_kw_bs = DocumentKnowledgeBase(
-            conn=self.conn,
-            chat_logs=self.chat_logs,
-            sess_name=self.sess_name
+            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
         )
 
-        # self.search_agent   = SearchAgent()
+        self.sear_agt = SearchAgent(
+            conn=self.conn, sess_name=self.sess_name
+        )
 
 
     # ========================================================
@@ -175,8 +173,6 @@ class SlashCmds:
     def cmd_recall(
         self,
         prompt: str,
-        is_attchmnt: bool,
-        paths: list[Path] | None = None
     ) -> str | None:
         """Retrieve and print relevant entries according to user prompt."""
         if not prompt:
@@ -191,13 +187,8 @@ class SlashCmds:
         prompt, prompt_embeddings, emb_tkns = self.embed.embedding_content(prompt)
         mem_list = self.mem.query_similar_content(prompt, prompt_embeddings)
 
-        # Attachments (manual call by user)
-        attchmnt_dict = self.doc_kw_bs.get_attachments_content(
-            is_attchmnt=is_attchmnt, attch_paths=paths
-        )
-
         cmbind_prompt = build_prompt(
-            prompt=prompt, mem_list=mem_list, attchmnt_dict=attchmnt_dict
+            prompt=prompt, mem_list=mem_list
         )
 
         # === MODEL ANSWER ==========================================
@@ -219,43 +210,9 @@ class SlashCmds:
             prompt=prompt,
             response=answer,
             state="external",
-            attchmnts=paths,
             p_tkns=p_tkns,
             o_tkns=o_tkns
         )
-
-        # === STORE ATTACHMENT(S) ===================================
-
-        if attchmnt_dict:
-            app_log.info(
-                "Storing %d uploaded attachment(s) to session '%s' knowledge base",
-                len(attchmnt_dict),
-                self.sess_name
-            )
-            for doc_path, data in attchmnt_dict.items():
-                cont = data["content"]
-                format = data["format"]
-                count = self.doc_kw_bs.embed_and_add_to_kw_bs(
-                    path=doc_path, cont=cont, format=format
-                )
-                if not count:
-                    app_log.warning(
-                        "Failed to store attachment '%s' to session '%s' knowledge base",
-                        doc_path,
-                        self.sess_name
-                    )
-                    print("Error: Failed to embed/store attachment to knowledge base")
-                    continue
-                app_log.info(
-                    "Stored attachment '%s' as %s chunks to session '%s' knowledge base",
-                    doc_path,
-                    count,
-                    self.sess_name
-                )
-                print("Attachment stored to session knowledge base")
-                # /////////////////////////////////////////////
-                # Embedding token count: emb_tkns + tkn_used
-                # /////////////////////////////////////////////
         return
 
 
@@ -279,58 +236,53 @@ class SlashCmds:
     # SEARCH
     # ========================================================
 
-    # def cmd_search(
-    #     self,
-    #     prompt: str,
-    #     enable_attachments: bool,
-    #     file_paths: list[Path] | None = None
-    # ) -> str | None:
-    #     """Generates, search and answer query based on user prompt."""
-    #     if not prompt:
-    #         logger.error("Command '/search' aborted: No prompt was provided")
-    #         return "Please specify what to search."
+    def cmd_search(
+        self,
+        prompt: str,
+        is_attchmnt: bool,
+        paths: list[Path] | None = None
+    ) -> str | None:
+        """Generates, search and answer query based on user prompt."""
+        if not prompt:
+            app_log.error("Command '/search' aborted: No prompt was provided")
+            return "Please specify what to search."
 
-    #     messages = self.chat.to_llm()
+        msgs = self.chat_logs.get_actv_convs()
 
-    #     # Read attachments (optional)
-    #     attachments_content = self.attachments.files(
-    #         messages=messages,
-    #         enable_attachments=enable_attachments,
-    #         file_paths=file_paths,
-    #     ) if enable_attachments == True else None
+        # === FULL CONTEXT ==========================================
 
-    #     # Model generates query
-    #     cmbind_prompt = (
-    #         f"# User prompt\n\n"
-    #         f"{prompt}\n\n"
-    #         f"---\n\n"
-    #         f"# Attachment(s)\n\n"
-    #         f"{attachments_content}"
-    #         if attachments_content else prompt
-    #     )
-    #     print("Generating query...")
-    #     query, p_tkns, o_tkns = self.search_agent.generates_query(
-    #         context=messages,
-    #         prompt=cmbind_prompt
-    #     )
+        # Attachments (optional)
+        attchmnt_dict = self.doc_kw_bs.get_attachments_content(
+            is_attchmnt=is_attchmnt, attch_paths=paths
+        )
 
-    #     # Search
-    #     response, query_with_urls, p_tkns, o_tkns = self.search_agent.web_search_and_response(
-    #         query=query,
-    #         context=self.chat.to_llm(),
-    #         prompt=cmbind_prompt,
-    #         max_results=config.MAX_RESULTS
-    #     )
-    #     logger.info("Processed web search response")
+        # Get search results
+        response = self.sear_agt.query_surface_content(
+            context=msgs, prompt=prompt
+        )
+        if not response:
+            return "No results found"
+        sear_results, gen_qry_p_tkns, gen_qry_o_tkns = response
 
-    #     # Save messages
-    #     self.chat.append_user_message_with_metadata(content=prompt, state="external")
-    #     self.chat.append_assistant_message_with_metadata(
-    #         content=response,
-    #         state="external",
-    #         query_with_urls=query_with_urls,
-    #         search=True,
-    #         p_tkns=p_tkns,
-    #         o_tkns=o_tkns
-    #     )
-    #     return
+        cmbind_prompt = build_prompt(
+            prompt=prompt, attchmnt_dict=attchmnt_dict, sear_results=sear_results
+        )
+        msgs.append({"role": "user", "content": cmbind_prompt})
+
+        # === MODEL ANSWER ==========================================
+
+        # Model interpret search results and answer user's questions
+        answer, ans_p_tkns, ans_o_tkns = LLM.model_response(
+            model=MODEL,
+            msgs=msgs
+        )
+
+        # Save messages
+        self.chat_logs.add_conv_turn(
+            prompt=prompt,
+            response=answer,
+            state="external",
+            p_tkns=gen_qry_p_tkns + ans_p_tkns,
+            o_tkns=gen_qry_o_tkns + ans_o_tkns
+        )
+        return

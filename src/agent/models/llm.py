@@ -124,7 +124,7 @@ class LLM:
             msgs = [LLM.system(system_prompt)] + context_without_system_prompt + usr_prompt
         else:
             msgs = [LLM.system(system_prompt)] + usr_prompt
-
+        
         prompt_log.info(system_prompt)
         prompt_log.info(msgs[-1].get("content", ""))
 
