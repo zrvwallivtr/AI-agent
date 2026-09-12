@@ -129,10 +129,10 @@ class LLM:
         prompt_log.info(msgs[-1].get("content", ""))
 
         response = olma_client.chat(model=model, messages=msgs)
-        content = response.message.content
+        cont = response.message.content
         p_tkns = getattr(response, "prompt_eval_count", 0) or 0
         o_tkns = getattr(response, "eval_count", 0) or 0
-        return content, p_tkns, o_tkns
+        return cont, p_tkns, o_tkns
 
 
     # =====================================================================

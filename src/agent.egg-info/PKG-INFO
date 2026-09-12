@@ -18,4 +18,5 @@ Requires-Dist: psycopg2>=2.9.12
 Requires-Dist: dotenv>=0.9.9
 Requires-Dist: tokenizers>=0.22.2
 Requires-Dist: langchain-text-splitters>=1.1.2
+Requires-Dist: feedparser>=6.0.14
 Dynamic: license-file

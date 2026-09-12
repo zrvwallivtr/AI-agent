@@ -3,4 +3,5 @@ cli
 config
 main
 prompts
+rag
 tools
