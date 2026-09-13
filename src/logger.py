@@ -1,6 +1,7 @@
 import json
 import logging
 import logging.config
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -43,7 +44,8 @@ _app_log_config.setLevel(logging.INFO)
 def app_logger(name: str) -> logging.Logger:
     """
     Returns a module logger configured to write
-    json to '~/.agent_app/logs/app.log'.
+    json to '~/.agent_app/logs/app.log' and
+    convert to readable output to the terminal.
     """
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
@@ -51,6 +53,17 @@ def app_logger(name: str) -> logging.Logger:
     # Avoid adding duplicate handlers if get_logger is called multiple times
     if not logger.handlers:
         logger.addHandler(_app_log_config)
+
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+                datefmt="%H:%M:%S"
+            )
+        )
+        logger.addHandler(console_handler)
+
         logger.propagate = False # Keep logs isolated to the log file
 
     return logger

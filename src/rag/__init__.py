@@ -1,8 +1,14 @@
-from src.rag.memory import Memory
-from src.rag.knowledge_base import KnowledgeBase
-from src.rag.documents.document_knowledge_base import DocumentKnowledgeBase
-from src.rag.web_search.search_agent import SearchAgent
-from src.rag.web_search.query_manager import generate_query
+from src.rag import memory
+from src.rag import knowledge_base
+from src.rag.documents import document_knowledge_base
+from src.rag.web_search import search_agent
+from src.rag.web_search.query_search_engine import query_manager
 
 
-__all__ = ["Memory", "KnowledgeBase", "DocumentKnowledgeBase", "SearchAgent", "generate_query"]
+__all__ = [
+    "memory",
+    "knowledge_base",
+    "document_knowledge_base",
+    "search_agent",
+    "query_manager"
+]

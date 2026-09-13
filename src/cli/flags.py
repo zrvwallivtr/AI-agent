@@ -3,7 +3,7 @@ from pathlib import Path
 
 from src.config import models
 
-from agent.models.ollama import ollama_pull_model
+from agent.models import ollama
 from src.cli.flag_functions import General, Session, File
 
 
@@ -14,7 +14,6 @@ def main():
     parser = argparse.ArgumentParser(prog="agent", description="AI Agent")
 
     # === GENERAL ===================================================================
-
     parser.add_argument(
         "question",
         nargs="?",
@@ -50,7 +49,6 @@ def main():
     )
 
     # === SESSION FLAGS =============================================================
-
     parser.add_argument(
         "--session",
         "-s",
@@ -83,7 +81,6 @@ def main():
     )
 
     # === READ ATTACHMENTS ==========================================================
-
     parser.add_argument(
         "--file",
         "-f",
@@ -102,7 +99,6 @@ def main():
     )
 
     # === PROJECT MANAGER ===========================================================
-
     parser.add_argument(
         "--project-summary",
         "-ps",
@@ -136,7 +132,6 @@ def main():
     )
 
     # === INITIALISE TOKENIZERS =====================================================
-
     parser.add_argument(
         "--load-tokenizers",
         "-lt",
@@ -159,7 +154,7 @@ def main():
     # =================================================================
 
     if args.install_model:
-        ollama_pull_model(args.install_model)
+        ollama.ollama_pull_model(args.install_model)
         return
 
     if args.installed_models:
@@ -269,7 +264,6 @@ def main():
     if args.question:
         General.question(
             prompt=args.question,
-            model=args.model,
             sess_name=args.session,
         )
 

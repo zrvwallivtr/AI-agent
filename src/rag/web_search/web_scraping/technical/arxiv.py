@@ -4,7 +4,7 @@ import time
 import json
 from typing import Literal
 
-from src.agent.models.llm import LLM
+from src.agent.models.llm import response_with_new_sys_prompt_and_context
 
 
 # ==============================================================
@@ -62,8 +62,8 @@ def _api_query_with_filters(
         "sortBy": SORT_BY_MAP[sort_by],
         "sortOrder": SORT_ORDER_MAP[sort_order]
     }
-    query_str = urllib.parse.urlencode(params)
-    return f"http://export.arxiv.org/api/query?{query_str}"
+    qry_str = urllib.parse.urlencode(params)
+    return f"http://export.arxiv.org/api/query?{qry_str}"
 
 
 def _parse_api_results(url: str, max_results: int = 10) -> list[dict]:
@@ -207,10 +207,10 @@ def _parse_llm_query_to_json(llm_out: str) -> dict:
 # LLM QUERY API
 # ==============================================================
 
-def llm_search_arxiv(model:str, context: list[dict], prompt: str) -> tuple[list[dict], int, int] | None:
+def llm_search_arxiv(model:str, contxt: list[dict], prompt: str) -> tuple[list[dict], int, int] | None:
     """User text -> LLM JSON -> validate args -> arXiv API call."""
-    response = LLM.response_with_new_sys_prompt_and_context(
-        model=model, system_prompt=INSTRUCT, prompt=prompt, context=context
+    response = response_with_new_sys_prompt_and_context(
+        model=model, sys_prompt=INSTRUCT, prompt=prompt, contxt=contxt
     )
     if not response:
         return

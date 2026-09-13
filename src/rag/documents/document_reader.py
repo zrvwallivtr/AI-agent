@@ -54,7 +54,6 @@ class DocumentReader:
         ext = safe_path.suffix.lower()
 
         # === PRIMARY: DOCLING -> FALLBACK: BASIC =========================================
-
         if DOCLING_DEFAULT:
             try:
                 app_log.info("Running Docling parser for '%s'", path)
@@ -74,7 +73,6 @@ class DocumentReader:
                     return f"Error reading document: {fallback_err}", "Error"
 
         # === Primary: Basic -> Fallback: Docling =========================================
-
         try:
             app_log.info("Running basic parser for '%s'", path)
             parser = self.bs_prsrs.formats.get(ext, self.bs_prsrs.read_txt)

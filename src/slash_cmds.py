@@ -1,22 +1,22 @@
 from re import search
-from agent import format_context
 from pathlib import Path
 
 from src.config import models
 from src.config import prompts
 
+from src import format_context
 from src.agent import (
-    LLM,
-    Embed,
-    ChatLogs,
-    build_prompt
+    ollama,
+    llm,
+    embed,
+    chat_logs,
 )
 from src.rag import (
-    Memory,
-    KnowledgeBase,
-    DocumentKnowledgeBase,
-    SearchAgent,
-    generate_query
+    memory,
+    knowledge_base,
+    document_knowledge_base,
+    search_agent,
+    query_manager
 )
 from src.logger import app_logger
 
@@ -25,6 +25,12 @@ app_log = app_logger(f"{__name__}.app")
 
 MODEL                       = models.MODEL
 MEM_RECALL_INTERPRET_PROMPT = prompts.MEM_RECALL_INTERPRET_PROMPT
+
+ChatLogs                = chat_logs.ChatLogs
+Memory                  = memory.Memory
+KnowledgeBase           = knowledge_base.KnowledgeBase
+DocumentKnowledgeBase   = document_knowledge_base.DocumentKnowledgeBase
+SearchAgent             = search_agent.SearchAgent
 
 
 class SlashCmds:
@@ -36,24 +42,19 @@ class SlashCmds:
         project: str | None = None
     ):
         self.conn       = conn
-        self.sess_name  = sess_name
+        self.sess_name  = sess_name.strip() if sess_name else "default_session"
         self.project    = project
         self.chat_logs  = chat_logs
-
-        self.embed      = Embed()
 
         self.mem = Memory(
             conn=self.conn, chat_logs=self.chat_logs, project=self.project
         )
-
         self.kw_bs = KnowledgeBase(
             conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
         )
-
         self.doc_kw_bs = DocumentKnowledgeBase(
             conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
         )
-
         self.sear_agt = SearchAgent(
             conn=self.conn, sess_name=self.sess_name
         )
@@ -67,64 +68,65 @@ class SlashCmds:
         self,
         prompt: str,
         is_attchmnt: bool,
-        paths: list[Path] | None = None
-    ) -> str | None:
+        paths: list[Path] | None
+    ) -> None:
         """
         Extract key info from user prompt and attachments (optional),
         save extracted memory entries to database.
+
+        MEMORISE PROMPT INCLUDES:
+        - Attachments (optional):
+          -> Allows option to memorise contents in uploaded attachments.
+        - Previous messages
+          -> Already included in 'extract_and_store_mem_from_conv()'
+        - User prompt:
+          -> Main instruction for memorise command
+
         NOTE: User's question will be saved directly, this function
-              will then generate a pre-written assistant message and
-              saved.
+              will then generate save a pre-written assistant message.
         """
         if not prompt:
-            app_log.warning("Command '/memorise' aborted: No prompt was provided")
-            return "Please specify what to memorize."
+            app_log.warning(
+                "Command '/memorise' aborted: No prompt was provided. Please specify instructions"
+            )
+            return
 
         msgs = self.chat_logs.get_actv_convs()
 
         # === FULL CONTEXT ==========================================
+        attchmnt_dict = self.doc_kw_bs.get_attachments_content(is_attchmnt=is_attchmnt, attch_paths=paths)
 
-        # Attachments (manual call by user)
-        attchmnt_dict = self.doc_kw_bs.get_attachments_content(
-            is_attchmnt=is_attchmnt, attch_paths=paths
-        )
+        cmbind_prompt = format_context.build_prompt(prompt=prompt, attchmnt_dict=attchmnt_dict)
 
-        cmbind_prompt = build_prompt(prompt=prompt, attchmnt_dict=attchmnt_dict)
-        msgs.append({"role": "user", "content": cmbind_prompt})
         app_log.debug("Appended new message to current messages")
 
         # === EXTRACT AND STORE MEMORY(S) ===========================
-
-        print(f"Extracting content from user's input...")
+        app_log.info("Extracting content from user's prompt")
         response = self.mem.extract_and_store_mem_from_conv(
-            extraction="manual", prompt=prompt
+            extraction="manual", prompt=cmbind_prompt
         )
         if not response:
-            return "Error: No data was extracted by the model."
+            app_log.warning("Failed to extract info from prompt: Model returns nothing")
+            return
         created_ids, p_tkns, o_tkns, emb_tkns = response
 
-        # == PRINT TO TERMINAL ======================================
-
+        # === PRINT TO TERMINAL =====================================
         mem_dict = self.mem.get_mem_content_from_ids(created_ids)
-        if mem_dict:
-            print("CONTENT SAVED:")
-            for cont, ctgry in mem_dict.items():
-                print(f"[{ctgry}] {cont}\n\n")
-        else:
-            return "Error: Unable to retrieve entry(s) from memory."
+        if not mem_dict:
+            app_log.warning("Failed to retrieve saved entry(s) from memory")
+            return
+        print("CONTENT SAVED:")
+        for cont, ctgry in mem_dict.items():
+            print(f"[{ctgry}] {cont}\n\n")
 
-        # User confirm options
+        # === USER CONFIRM OPTIONS ==================================
         choice = input("Press [Enter] to continue or type [u] to undo:")
         if choice == "u":
-            app_log.debug("User selected [u]: Undoing saved memory(s)")
+            app_log.debug("Removing saved memory(s)")
             self.mem.delete_mem(created_ids)
-            return "Entry deleted."
+            return
 
-        # /////////////////////////////////////////////////////
-        # Token usage for memory extraction: p_tkns, o_tkns
-        # /////////////////////////////////////////////////////
-
-        # Save messages
+        # === SAVE MESSAGES =========================================
         mock_resp = "Important information(s) has been extracted added to database."
         self.chat_logs.add_conv_turn(
             prompt=prompt,
@@ -136,76 +138,49 @@ class SlashCmds:
         )
 
         # === STORE ATTACHMENT(S) ===================================
-
         if attchmnt_dict:
-            app_log.info(
-                "Storing %d uploaded attachment(s) to session '%s' knowledge base",
-                len(attchmnt_dict),
-                self.sess_name
-            )
-            for doc_path, data in attchmnt_dict.items():
-                cont = data["content"]
-                format = data["format"]
-                count = self.doc_kw_bs.embed_and_add_to_kw_bs(
-                    path=doc_path, cont=cont, format=format
-                )
-                if not count:
-                    app_log.warning(
-                        "Failed to store attachment '%s' to session '%s' knowledge base",
-                        doc_path,
-                        self.sess_name
-                    )
-                    print("Error: Failed to embed/store attachment to knowledge base")
-                    continue
-                app_log.info(
-                    "Stored attachment '%s' as %s chunks to session '%s' knowledge base",
-                    doc_path,
-                    count,
-                    self.sess_name
-                )
-                print("Attachment stored to session knowledge base")
-                # /////////////////////////////////////////////
-                # Embedding token count: emb_tkns + tkn_used
-                # /////////////////////////////////////////////
+            self.doc_kw_bs.store_attachments(attchmnt_dict)
         return
 
 
     def cmd_recall(
         self,
         prompt: str,
+        is_attchmnt: bool,
+        paths: list[Path] | None
     ) -> str | None:
-        """Retrieve and print relevant entries according to user prompt."""
+        """
+        Retrieve and print relevant entries according to user prompt.
+
+        RECALL PROMPT INCLUDES:
+        - User prompt:
+          -> Main reference for what to recall
+        """
         if not prompt:
             app_log.warning("Command '/recall' aborted: No prompt was provided")
             return "Please specify what to recall."
 
+        if is_attchmnt and paths:
+            app_log.warning(
+                "Command '/recall' does not support attachment uploads. Ignoring uploaded content(s)"
+            )
+
         msgs = self.chat_logs.get_actv_convs()
 
-        # === FULL CONTEXT ==========================================
-
-        # Retrieve memory(s)
-        prompt, prompt_embeddings, emb_tkns = self.embed.embedding_content(prompt)
-        mem_list = self.mem.query_similar_content(prompt, prompt_embeddings)
-
-        cmbind_prompt = build_prompt(
-            prompt=prompt, mem_list=mem_list
-        )
+        # === RETRIEVE MEMORY FROM DATABASE =========================
+        prompt, prompt_embdings, emb_tkns = embed.embedding_content(prompt)
+        mem_list = self.mem.query_similar_content(qry=prompt, qry_embdings=prompt_embdings)
 
         # === MODEL ANSWER ==========================================
-
-        # Model interpret recalled memory(s)
-        answer, p_tkns, o_tkns = LLM.response_memory_recall_format(
+        # Model interpret recalled memories
+        answer, p_tkns, o_tkns = llm.response_memory_recall_format(
             model=self.mem.model,
-            system_prompt=MEM_RECALL_INTERPRET_PROMPT,
-            prompt=cmbind_prompt,
+            sys_prompt=MEM_RECALL_INTERPRET_PROMPT,
+            prompt=prompt,
             context=msgs
         )
 
-        # ///////////////////////////////////////////////////////////////////
-        # Token usage for answering from recalled entries: p_tkns, o_tkns
-        # ///////////////////////////////////////////////////////////////////
-
-        # Save messages
+        # === SAVE MESSAGES =========================================
         self.chat_logs.add_conv_turn(
             prompt=prompt,
             response=answer,
@@ -223,13 +198,45 @@ class SlashCmds:
     def cmd_compress(
         self,
         prompt: str,
+        is_attchmnt: bool,
+        paths: list[Path] | None
     ) -> str | None:
-        """Retrieve and print relevant entries according to user prompt."""
-        if not prompt:
-            app_log.warning("Command '/compress' aborted: No prompt was provided")
-            return "Please specify compression instructions."
+        """
+        Retrieve and print relevant entries according to user prompt.
 
-        self.chat_logs.compress_active_conv(prompt)
+        COMPRESS PROMPT INCLUDES:
+        - Attachments (optional):
+          -> Allows option to upload attachments that might influence chat compression.
+        - All previous conversations that labelled as 'is_compressed = FALSE'
+          -> Already included in 'compress_active_conv()'.
+        - User prompt:
+          -> Main instruction on compression focus.
+        """
+        # === FULL CONTEXT ==========================================
+        attchmnt_dict = self.doc_kw_bs.get_attachments_content(is_attchmnt=is_attchmnt, attch_paths=paths)
+
+        cmbind_prompt = format_context.build_prompt(prompt=prompt, attchmnt_dict=attchmnt_dict)
+
+        # === COMPRESSION ===========================================
+        if not prompt:
+            if is_attchmnt and paths:
+                app_log.warning(
+                    "Command '/compress' aborted: Prompt must be provided if attachment is uploaded"
+                )
+                return
+
+            app_log.info(
+                "No prompt was provided for command '/compress': Running with default instructions"
+            )
+            self.chat_logs.auto_compresss_active_conv()
+
+        print(f"Compression session '{self.sess_name}' conversations...")
+        self.chat_logs.compress_active_conv(prompt=cmbind_prompt)
+        app_log.info("Session '%s' compression completed", self.sess_name)
+
+        # === STORE ATTACHMENT(S) ===================================
+        if attchmnt_dict:
+            self.doc_kw_bs.store_attachments(attchmnt_dict)
         return
 
     # ========================================================
@@ -240,44 +247,57 @@ class SlashCmds:
         self,
         prompt: str,
         is_attchmnt: bool,
-        paths: list[Path] | None = None
+        paths: list[Path] | None
     ) -> str | None:
-        """Generates, search and answer query based on user prompt."""
+        """
+        Generates, search and answer query based on user prompt.
+
+        WEB SEARCH PROMPT INCLUDES:
+        - Attachments (optional):
+          -> Allows option to upload attachments for more specific searches.
+        - User prompt:
+          -> Main query that influences model's searches.
+
+        INTERPRET SEARCH RESULTS PROMPT INCLUDES:
+        - Attachments (optional):
+          -> Allows extra context from attachments.
+        - Web search results:
+          -> From web search results interpret/answer user prompt.
+        - User prompt:
+          -> Uses the same prompt as the previous step, this time for model
+             to answer from the retrieved search results.
+        """
         if not prompt:
             app_log.error("Command '/search' aborted: No prompt was provided")
             return "Please specify what to search."
 
         msgs = self.chat_logs.get_actv_convs()
 
-        # === FULL CONTEXT ==========================================
+        # === FULL CONTEXT FOR WEB SEARCH ===========================
+        attchmnt_dict = self.doc_kw_bs.get_attachments_content(is_attchmnt=is_attchmnt, attch_paths=paths)
 
-        # Attachments (optional)
-        attchmnt_dict = self.doc_kw_bs.get_attachments_content(
-            is_attchmnt=is_attchmnt, attch_paths=paths
+        cmbind_sear_prompt = format_context.build_prompt(
+            prompt=prompt, attchmnt_dict=attchmnt_dict
         )
 
-        # Get search results
-        response = self.sear_agt.query_surface_content(
-            context=msgs, prompt=prompt
-        )
+        # === FULL CONTEXT FOR MODEL ANSWER =========================
+        response = self.sear_agt.query_surface_content(contxt=msgs, prompt=cmbind_sear_prompt)
         if not response:
             return "No results found"
         sear_results, gen_qry_p_tkns, gen_qry_o_tkns = response
 
-        cmbind_prompt = build_prompt(
+        cmbind_prompt = format_context.build_prompt(
             prompt=prompt, attchmnt_dict=attchmnt_dict, sear_results=sear_results
         )
-        msgs.append({"role": "user", "content": cmbind_prompt})
+        msgs.append(llm.user_message(cmbind_prompt))
 
         # === MODEL ANSWER ==========================================
-
-        # Model interpret search results and answer user's questions
-        answer, ans_p_tkns, ans_o_tkns = LLM.model_response(
+        answer, ans_p_tkns, ans_o_tkns = llm.model_response(
             model=MODEL,
             msgs=msgs
         )
 
-        # Save messages
+        # === SAVE MESSAGES =========================================
         self.chat_logs.add_conv_turn(
             prompt=prompt,
             response=answer,
@@ -285,4 +305,8 @@ class SlashCmds:
             p_tkns=gen_qry_p_tkns + ans_p_tkns,
             o_tkns=gen_qry_o_tkns + ans_o_tkns
         )
+
+        # === STORE ATTACHMENT(S) ===================================
+        if attchmnt_dict:
+            self.doc_kw_bs.store_attachments(attchmnt_dict)
         return

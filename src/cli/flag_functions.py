@@ -4,13 +4,17 @@ from pathlib import Path
 
 from src.config import postgres
 
-from src.agent.models.ollama import olma_client
-from src.agent.chat_logs import ChatLogs
+from src.agent import ollama
+from src.agent import chat_logs
 from src.core import Agent
-from src.rag import KnowledgeBase
+from src.rag import knowledge_base
 
 conn = postgres.conn
 cur = conn.cursor()
+
+ollama_clt     = ollama.ollama_clt
+ChatLogs        = chat_logs.ChatLogs
+KnowledgeBase   = knowledge_base.KnowledgeBase
 
 
 def del_sess(sess_name: str | None = None) -> str:
@@ -76,13 +80,12 @@ def del_sess(sess_name: str | None = None) -> str:
 class General:
     @staticmethod
     def question(
-        model: str,
         prompt: str,
         sess_name: str | None = None,
         project: str | None = None
     ):
         """Ask question only, not flags."""
-        agent   = Agent(model=model, sess_name=sess_name, project=project)
+        agent   = Agent(sess_name=sess_name, project=project)
         answer  = agent.ask(prompt=prompt)
         return
 
@@ -93,7 +96,7 @@ class General:
 
     @staticmethod
     def installed_models():
-        model_list = olma_client.list()
+        model_list = ollama_clt.list()
 
         print("Installed models:")
         for model in model_list.get("models", []):
@@ -120,7 +123,7 @@ class Session:
 
         if not prompt:
             return f"New session created: session={self.sess_name}"
-        return General.question(prompt=prompt, model=model, sess_name=self.sess_name)
+        return General.question(prompt=prompt, sess_name=self.sess_name)
 
 
     def delete_session(self) -> str:
@@ -159,7 +162,7 @@ class File:
         project: str | None = None
     ):
         """Combine contents in document(s) with user prompt."""
-        agent   = Agent(model=model, sess_name=self.sess_name, project=project)
+        agent   = Agent(sess_name=self.sess_name, project=project)
         answer  = agent.ask(
             prompt=prompt,
             is_attchmnt=True,

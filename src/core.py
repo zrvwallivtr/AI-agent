@@ -1,33 +1,38 @@
-from operator import is_
-from agent import format_context
+import socket
 from pathlib import Path
 
 from src.config.postgres import conn
-from src.config.models import (
-    MODEL,
-    MODEL_MAX_TOKENS,
-    EMBED_MODEL,
-    EMBED_MAX_TOKENS
-)
+from src.config import models
 
+from src import format_context
 from src.agent import (
-    olma_client,
-    LLM,
-    Embed,
-    Tknizr,
-    ChatLogs,
-    build_prompt
+    ollama,
+    llm,
+    embed,
+    chat_logs,
+    tokenizers
 )
 from src.rag import (
-    Memory,
-    KnowledgeBase,
-    DocumentKnowledgeBase
+    memory,
+    knowledge_base,
+    document_knowledge_base
 )
-from src.slash_cmds import SlashCmds
-from src.logger import app_logger
+from src import slash_cmds
+from src import logger
 
 
-app_log = app_logger(f"{__name__}.app")
+app_log = logger.app_logger(f"{__name__}.app")
+
+MODEL               = models.MODEL
+MODEL_MAX_TOKENS    = models.MODEL_MAX_TOKENS
+EMBED_MODEL         = models.EMBED_MODEL
+EMBED_MAX_TOKENS    = models.EMBED_MAX_TOKENS
+
+Tknizr                  = tokenizers.Tknizr
+ChatLogs                = chat_logs.ChatLogs
+Memory                  = memory.Memory
+KnowledgeBase           = knowledge_base.KnowledgeBase
+DocumentKnowledgeBase   = document_knowledge_base.DocumentKnowledgeBase
 
 
 def _detect_cmd(prompt: str) -> tuple[str | None, str]:
@@ -44,112 +49,78 @@ def _detect_cmd(prompt: str) -> tuple[str | None, str]:
     return None, prompt
 
 
+def _is_connected(host="1.1.1.1", port=53, timeout=3) -> bool:
+    """
+    Returns True if the system can connect to the host/port,
+    otherwise returns false.
+    Host (Cloudflare DNS):  1.1.1.1
+    Port (DNS traffic):     53
+    """
+    try:
+        # Create socket object with connection timeout
+        socket.setdefaulttimeout(timeout)
+
+        # Attempt to connect to the host
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((host, port))
+        return True
+
+    except (socket.timeout, OSError):
+        return False
+
+
 class Agent:
     def __init__(
         self,
-        model: str | None = None,
         sess_name: str | None = None,
         project: str | None = None
     ):
-        model = MODEL if model is None else model
+        self.tknizr = Tknizr(MODEL)
 
-        if MODEL_MAX_TOKENS:
-            self.tknizr = Tknizr(model, MODEL_MAX_TOKENS)
-        else:
-            self.tknizr = Tknizr(model)
-
-        self.conn       = conn
-        self.model      = model
-        self.emb_model  = EMBED_MODEL
         self.sess_name  = sess_name
         self.project    = project
 
-        self.embed = Embed()
-
-        self.chat_logs = ChatLogs(conn=self.conn, sess_name=self.sess_name)
-
+        self.conn       = conn
+        self.chat_logs = ChatLogs(
+            conn=self.conn, sess_name=self.sess_name
+        )
         self.mem = Memory(
-            conn=self.conn,
-            chat_logs=self.chat_logs,
-            project=project
+            conn=self.conn, chat_logs=self.chat_logs, project=project
         )
-
         self.kw_bs = KnowledgeBase(
-            conn=self.conn,
-            chat_logs=self.chat_logs,
-            sess_name=self.sess_name
+            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
         )
-
-        self.slash_cmd = SlashCmds(
-            conn=self.conn,
-            chat_logs=self.chat_logs,
-            sess_name=self.sess_name,
-            project=project
+        self.slash_cmd = slash_cmds.SlashCmds(
+            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name, project=project
         )
-
         self.doc_kw_bs = DocumentKnowledgeBase(
-            conn=self.conn,
-            chat_logs=self.chat_logs,
-            sess_name=self.sess_name
+            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
         )
-
         # self.search_agent   = SearchAgent()
-
-
-    # ===================================
-    # Model validation
-    # ===================================
-
-    def _validate_model(self, model: str):
-        """Check if model is installed via Ollama."""
-        try:
-            # Fetch all downloaded models
-            local_models = [m['model'] for m in olma_client.list().get('models', [])]
-
-            # Check match
-            unknown_models = []
-            if model not in local_models:
-                unknown_models += model
-                raise ValueError(
-                    f"Error: Unknown or unavailable model '{model}'."
-                    f"Run 'ollama pull {model}' to install model."
-                )
-            known_models = set(local_models) - set(unknown_models)
-            app_log.debug("Detected %s known model(s) and %s unknown model(s)", known_models, unknown_models)
-
-        except Exception as e:
-            # If ollama is down
-            if isinstance(e, ValueError):
-                raise e
-            raise RuntimeError(f"Error: Could not connect to local Ollama service '{e}'")
 
 
     # ===================================
     # Token management
     # ===================================
 
-    def _manage_token_budget(self, prompt: str):
+    def _manage_token_budget(self, prompt: str) -> None:
         """
         Reserves extra tokens for model response. If exceeds
         maximum tokens, the model summarise previous messages
         to free up token space.
         """
-        reserve         = 1000 # (tokens)
-        curr_hstry_tkns = self.tknizr.count_history_tokens(self.chat_logs.get_actv_convs())
-        if not curr_hstry_tkns:
+        app_log.debug("Estimating token usage for session '%s'", self.sess_name)
+        reserve = 1000 # (tokens)
+        curr_hist_tkns = self.tknizr.count_history_tokens(self.chat_logs.get_actv_convs())
+        if not curr_hist_tkns:
             return
 
-        estimate_next = curr_hstry_tkns + (len(prompt) // 4)
+        est_next = curr_hist_tkns + (len(prompt) // 4)
 
-        if self.tknizr.model_max_tokens - estimate_next -reserve < 0:
-            app_log.info("Current tokens exceeds threshold. Compressing session '%s'", self.sess_name)
-            print("Current tokens exceeds threshold. Compressing session...")
+        if self.tknizr.model_max_tkns - est_next - reserve < 0:
+            app_log.info("Current tokens exceeds threshold")
             self.chat_logs.auto_compresss_active_conv()
-            app_log.info("Compression complete. Continue session '%s'", self.sess_name)
-            print("Compression complete. Continue session...")
             return
-
-        app_log.debug("Current tokens within threshold. Continue session")
 
 
     # ===================================
@@ -160,7 +131,9 @@ class Agent:
         self,
         prompt: str,
         is_auto_mem_rtve: bool = True,
+        is_auto_mem_store: bool = False,
         is_auto_doc_rtve: bool = True,
+        is_auto_web_sear: bool = False,
         is_attchmnt: bool = False,
         paths: list[Path] | None = None
     ) -> None | str:
@@ -176,101 +149,87 @@ class Agent:
 
         msgs = self.chat_logs.get_actv_convs()
 
+        # === SLASH COMMANDS ====================================
         cmd, user_prompt = _detect_cmd(prompt)
 
-        # === SLASH COMMANDS ====================================
-
-        if cmd:
-            # Only use 'user_prompt' as 'prompt' here
+        if cmd: # Only use 'user_prompt' as 'prompt' here
             if cmd == "/memorise":
                 app_log.debug("'/memorise' command triggered")
-                msgs.append({"role": "user", "content": user_prompt})
-                response = self.slash_cmd.cmd_memorise(
-                    prompt=user_prompt,
-                    is_attchmnt=is_attchmnt,
-                    paths=paths
+                msgs.append(llm.user_message(user_prompt))
+                self.slash_cmd.cmd_memorise(
+                    prompt=user_prompt, is_attchmnt=is_attchmnt, paths=paths
                 )
-                if response:
-                    print(response)
                 return
                 # // END HERE //
 
             if cmd == "/recall":
                 app_log.debug("'/recall' command triggered")
-                msgs.append({"role": "user", "content": user_prompt})
-                response = self.slash_cmd.cmd_recall(
-                    prompt=user_prompt,
+                msgs.append(llm.user_message(user_prompt))
+                self.slash_cmd.cmd_recall(
+                    prompt=user_prompt, is_attchmnt=is_attchmnt, paths=paths
                 )
-                if response:
-                    print(response)
                 return
                 # // END HERE //
 
             if cmd == "/compress":
                 app_log.debug("'/compress' command triggered")
-                msgs.append({"role": "user", "content": user_prompt})
-                response = self.slash_cmd.cmd_compress(
-                    prompt=user_prompt
+                msgs.append(llm.user_message(user_prompt))
+                self.slash_cmd.cmd_compress(
+                    prompt=user_prompt, is_attchmnt=is_attchmnt, paths=paths
                 )
-                if response:
-                    print(response)
                 return
                 # // END HERE //
 
             if cmd == "/search":
                 app_log.debug("'/search' command tirggered")
                 # User's question were saved
-                response = self.slash_cmd.cmd_search(
-                    prompt=user_prompt,
-                    is_attchmnt=is_attchmnt,
-                    paths=paths
+                self.slash_cmd.cmd_search(
+                    prompt=user_prompt, is_attchmnt=is_attchmnt, paths=paths
                 )
-                if response:
-                    print(response)
                 return
-              # // End here //
+                # // END HERE //
 
         # === FULL CONTEXT ======================================
+        prompt, prompt_embdings, prompt_tkns = embed.embedding_content(prompt)
 
-        prompt, prompt_embeddings, prompt_tkns = self.embed.embedding_content(prompt)
-
-        # Auto retrieve relevant memories
+        # AUTO RETRIEVE RELEVANT MEMORIES
         mem_list = self.mem.toggle_auto_retrive_memory_entries(
             is_auto_mem_rtve=is_auto_mem_rtve,
             prompt=prompt,
-            prompt_embeddings=prompt_embeddings
+            prompt_embdings=prompt_embdings
         )
 
-        # Auto retrieve relevant session documents
+        # AUTO RETRIEVE RELEVANT SESSION DOCUMENTS
         doc_list = self.doc_kw_bs.toggle_auto_retrieve_sess_docs(
             is_auto_doc_rtve=is_auto_doc_rtve,
             prompt=prompt,
-            prompt_embeddings=prompt_embeddings
+            prompt_embdings=prompt_embdings
         )
 
-        # Attachments (manual call by user)
+        # UPLOADED ATTACHMENTS (OPTIONAL)
         attchmnt_dict = self.doc_kw_bs.get_attachments_content(
             is_attchmnt=is_attchmnt, attch_paths=paths
         )
 
-        # Auto web search
+        # AUTO WEB SEARCH
+        # if _is_connected() and is_auto_web_sear:
 
-        # All context combined
-        cmbind_prompt = build_prompt(
+        # ALL CONTEXT COMBINED (WON'T BE SAVED TO CHAT HISTORY)
+        cmbind_prompt = format_context.build_prompt(
             prompt=prompt, mem_list=mem_list, doc_list=doc_list, attchmnt_dict=attchmnt_dict
         )
-        msgs.append({"role": "user", "content": cmbind_prompt})
+        msgs.append(llm.user_message(cmbind_prompt))
 
         # === MODEL ANSWER ======================================
-
-        response, p_tkns, o_tkns = LLM.model_response(
-            model=self.model, msgs=msgs
+        response, p_tkns, o_tkns = llm.model_response(
+            model=MODEL, msgs=msgs
         )
 
         # Calculate total tokens
         total_p_tkns = prompt_tkns + p_tkns
         total_o_tkns = o_tkns
 
+        # === SAVE MESSAGES =====================================
         self.chat_logs.add_conv_turn(
             prompt=prompt,
             response=response,
@@ -281,41 +240,14 @@ class Agent:
         )
 
         # === STORE MEMORY(S) ===================================
-
         # self.memory.toggle_auto_store_memory_entries(
-        #     enable_auto_memory_store=True,
+        #     is_auto_mem_store=is_auto_mem_store,
         #     model_max_tokens=self.get_model_max_tokens,
         #     context=self.chat.to_llm()
         # )
 
         # === STORE ATTACHMENT(S) ===============================
-
         if attchmnt_dict:
-            app_log.info(
-                "Storing %d uploaded attachment(s) to session '%s' knowledge base",
-                len(attchmnt_dict),
-                self.sess_name
-            )
-            for doc_path, data in attchmnt_dict.items():
-                cont = data["content"]
-                format = data["format"]
-                count = self.doc_kw_bs.embed_and_add_to_kw_bs(
-                    path=doc_path, cont=cont, format=format
-                )
-                if not count:
-                    app_log.warning(
-                        "Failed to store attachment '%s' to session '%s' knowledge base",
-                        doc_path,
-                        self.sess_name
-                    )
-                    print("Error: Failed to embed/store attachment to knowledge base")
-                    continue
-                app_log.info(
-                    "Stored attachment '%s' as %s chunks to session '%s' knowledge base",
-                    doc_path,
-                    count,
-                    self.sess_name
-                )
-                print("Attachment stored to session knowledge base")
+            self.doc_kw_bs.store_attachments(attchmnt_dict)
         return
         # // END HERE //

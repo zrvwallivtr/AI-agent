@@ -3,18 +3,24 @@ import subprocess
 
 from src.config import models
 
+from src.logger import app_logger
+
+
+app_log = app_logger(f"{__name__}.app")
 
 OLLAMA_HOST = models.OLLAMA_HOST
 
-olma_client = ollama.Client(host=OLLAMA_HOST)
+ollama_clt = ollama.Client(host=OLLAMA_HOST)
 
 
 def _is_model_installed(model: str) -> bool:
     """Return True if model is already installed."""
-    inst = [m["model"] for m in olma_client.list()["models"]]
+    inst = [m["model"] for m in ollama_clt.list()["models"]]
 
     if model in inst:
+        app_log.debug("Model '%s' has already been installed locally", model)
         return True
+    app_log.info("Model '%s' has not been installed", model)
     return False
 
 
@@ -23,8 +29,8 @@ def _ollama_pull_via_docker(model: str, vol_name: str = "agent_app_ollama_models
     Pull model using temporary Docker container with internet access,
     writing into the same volume the isolated ollama service mounts.
     """
+    app_log.info("Pulling '%s' via host Docker", model)
     try:
-        print(f"Pulling '{model}' via host Docker...")
         result = subprocess.run(
             [
                 "docker", "run", "--rm",
@@ -38,14 +44,15 @@ def _ollama_pull_via_docker(model: str, vol_name: str = "agent_app_ollama_models
             check=True,
             capture_output=False
         )
+        app_log.info("Model '%s' has been installed", model)
         return result.returncode == 0
 
     except subprocess.CalledProcessError as e:
-        print(f"\nFailed to pull model '{model}' vai host Docker: {e}")
+        app_log.warning("Failed to pull model '%s' vai host Docker: %s", model, e)
         return False
 
     except FileNotFoundError:
-        print("\nFailed to pull model: Docker CLI not found on host")
+        app_log.warning("Failed to pull model: Docker CLI not found on host")
         return False
 
 
@@ -58,5 +65,5 @@ def ollama_pull_model(model: str) -> bool:
         return _ollama_pull_via_docker(model)
 
     except Exception as e:
-        print(f"\nFailed to pull model '{model}': {e}")
+        app_log.warning("Failed to pull model '%s': %s", model, e)
         return False

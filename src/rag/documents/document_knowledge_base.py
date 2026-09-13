@@ -8,12 +8,11 @@ from typing import Any
 from datetime import datetime, timedelta, timezone
 
 from src.config import models
-from src.config import memory
 from src.config import files_and_directories as files_n_dir
+from src.config import memory
 from src.config import postgres
 
-from src.agent import ChatLogs, Embed
-from src.rag.documents.basic_parsers import BasicParsers
+from src.agent import chat_logs, embed
 from src.rag.documents.document_reader import DocumentReader
 from src.logger import app_logger
 
@@ -22,6 +21,7 @@ app_log = app_logger(f"{__name__}.app")
 
 RETRIEVE_MEM_ENTRY_LIMIT    = memory.RETRIEVE_MEM_ENTRY_LIMIT
 UPLOAD_DIR                  = files_n_dir.UPLOAD_DIR
+ChatLogs                    = chat_logs.ChatLogs
 
 
 class DocumentKnowledgeBase:
@@ -39,7 +39,6 @@ class DocumentKnowledgeBase:
 
         self.chat_logs  = chat_logs
         self.doc_reader = DocumentReader()
-        self.embed      = Embed()
 
 
     # ================================================
@@ -72,8 +71,8 @@ class DocumentKnowledgeBase:
         if row is None:
             return None
 
-        chnk_cont, embeddings, chnk_tkns = row
-        return chnk_cont, embeddings, chnk_tkns
+        chnk_cont, embdings, chnk_tkns = row
+        return chnk_cont, embdings, chnk_tkns
 
 
     # ================================================
@@ -103,6 +102,37 @@ class DocumentKnowledgeBase:
     # ================================================
     # ATTACHMENTS
     # ================================================
+
+    def store_attachments(self, attchmnt_dict: dict[Path, dict[str, str]]) -> None:
+        app_log.info(
+            "Storing %d uploaded attachment(s) to session '%s' knowledge base",
+            len(attchmnt_dict),
+            self.sess_name
+        )
+        for doc_path, data in attchmnt_dict.items():
+            cont = data["content"]
+            format = data["format"]
+            count = self.embed_and_add_to_kw_bs(
+                path=doc_path, cont=cont, format=format
+            )
+            if not count:
+                app_log.warning(
+                    "Failed to store attachment '%s' to session '%s' knowledge base",
+                    doc_path,
+                    self.sess_name
+                )
+                print("Error: Failed to embed/store attachment to knowledge base")
+                continue
+
+            app_log.info(
+                "Stored attachment '%s' as %s chunks to session '%s' knowledge base",
+                doc_path,
+                count,
+                self.sess_name
+            )
+            print("Attachment stored to session knowledge base")
+        return
+
 
     def get_attachments_content(
         self,
@@ -138,7 +168,7 @@ class DocumentKnowledgeBase:
         self,
         doc_name: str,
         chnk_idx: int,
-        embeddings: list[float],
+        embdings: list[float],
         chnk_tkns: int,
         cont: str,
         mime: str,
@@ -163,7 +193,7 @@ class DocumentKnowledgeBase:
                 (
                     self.chat_logs.get_sess_id(),
                     "document",
-                    str(embeddings),
+                    str(embdings),
                     chnk_tkns,
                     cont,
                     cont_hash,
@@ -232,14 +262,14 @@ class DocumentKnowledgeBase:
                     "Document already exists in session '%s' knowledge base. Skipping re-embed",
                     self.sess_name
                 )
-                chnk_cont, embeddings, chnk_tkns = doc_chnk
+                chnk_cont, embdings, chnk_tkns = doc_chnk
 
             else:
-                chnk_cont, embeddings, chnk_tkns = self.embed.embedding_content(chnk)
+                chnk_cont, embdings, chnk_tkns = embed.embedding_content(chnk)
             hash = self._hash_content(chnk_cont)
 
             # Skip chunks that failed
-            if not embeddings:
+            if not embdings:
                 app_log.warning(
                     "Error occur in embedding chunk in '%s'. Skipping chunk", str(path)
                 )
@@ -250,7 +280,7 @@ class DocumentKnowledgeBase:
                 result = self._add_to_kw_bs(
                     doc_name=name,
                     chnk_idx=idx,
-                    embeddings=embeddings,
+                    embdings=embdings,
                     chnk_tkns=chnk_tkns,
                     cont=chnk_cont,
                     mime=mime,
@@ -335,7 +365,7 @@ class DocumentKnowledgeBase:
 
     def query_similar_knowledge(
         self,
-        qry: str, qry_embeddings: list[float],
+        qry: str, qry_embdings: list[float],
         min_sim: float = 0.65
     ) -> list[dict[str, Any]] | None:
         """Queries knowledge base for similar content."""
@@ -350,10 +380,10 @@ class DocumentKnowledgeBase:
             LIMIT %s;
             """,
             (
-                str(qry_embeddings),
-                str(qry_embeddings),
+                str(qry_embdings),
+                str(qry_embdings),
                 min_sim,
-                str(qry_embeddings),
+                str(qry_embdings),
                 self.qry_limit
             )
         )
@@ -380,7 +410,7 @@ class DocumentKnowledgeBase:
         self,
         is_auto_doc_rtve: bool,
         prompt: str,
-        prompt_embeddings: list[float]
+        prompt_embdings: list[float]
     ) -> list[dict[str, Any]] | None:
         """Auto fetches previous documents contents ability, return relevant contents if its toggled on."""
         if is_auto_doc_rtve:
@@ -388,5 +418,5 @@ class DocumentKnowledgeBase:
                 "Auto document retrieve on. Querying session '%s' knowledge_base for relevant documents",
                 self.sess_name
             )
-            return self.query_similar_knowledge(prompt, prompt_embeddings)
+            return self.query_similar_knowledge(prompt, prompt_embdings)
         return

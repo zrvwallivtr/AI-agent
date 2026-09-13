@@ -73,7 +73,9 @@ OLLAMA_HOST = _cfg["models"]["ollama_host"]
 
 MODEL, MODEL_MAX_TOKENS         = _set_model_tokens(_cfg, CONFIG_FILE, "chat", "chat_max_tokens")
 MEM_MODEL, MEM_MODEL_MAX_TOKENS = _set_model_tokens(_cfg, CONFIG_FILE, "memory", "memory_max_tokens")
+SEAR_MODEL, SEAR_MODEL_MAX_TOKENS = _set_model_tokens(_cfg, CONFIG_FILE, "web_search", "web_search_max_tokens")
 PM_MODEL, PM_MAX_TOKENS         = _set_model_tokens(_cfg, CONFIG_FILE, "project_manager", "pm_max_tokens")
+
 EMBED_MODEL, EMBED_MAX_TOKENS   = _set_model_tokens(_cfg, CONFIG_FILE, "embedding", "embedding_max_tokens")
 
 FALLBACK_TOKENIZER = _cfg["models"]["fallback_tokenizer"]

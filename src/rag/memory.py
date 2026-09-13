@@ -13,7 +13,8 @@ from src.config import prompts
 from src.config import memory
 from src.config import postgres
 
-from src.agent import ChatLogs, LLM, Embed
+from src import format_context
+from src.agent import chat_logs, llm, embed
 from src.models_database import EMB_MODEL_DIMENSION
 from src.logger import app_logger, prompt_logger
 
@@ -28,8 +29,17 @@ MEM_MANUAL_PROMPT           = prompts.MEM_MANUAL_PROMPT
 RETRIEVE_MEM_ENTRY_LIMIT    = memory.RETRIEVE_MEM_ENTRY_LIMIT
 AUTO_MEMORY_STORE_TOKENS    = memory.AUTO_MEMORY_STORE_TOKENS
 
-CATEGORY_TYPES  = Literal["preference", "stack", "fact", "project", "instruction", "correction"]
-CATEGORIES      = list(get_args(CATEGORY_TYPES))
+CATEGORY_TYPES = Literal[
+    "preference",
+    "stack",
+    "fact",
+    "project",
+    "instruction",
+    "correction"
+]
+CATEGORIES = list(get_args(CATEGORY_TYPES))
+
+ChatLogs = chat_logs.ChatLogs
 
 
 class Memory:
@@ -49,10 +59,6 @@ class Memory:
         self.mem_manual_prompt  = MEM_MANUAL_PROMPT
         self.qry_limit          = RETRIEVE_MEM_ENTRY_LIMIT
         self.chat_logs          = chat_logs
-
-        self.embed      = Embed()
-        self.emb_dim    = EMB_MODEL_DIMENSION[EMBED_MODEL]
-
         self._init_memory_db()
 
 
@@ -65,6 +71,7 @@ class Memory:
         Return a SHA-256 hash of raw text content,
         used for dedupe before embedding.
         """
+        app_log.debug("Hashing memory from given content")
         return hashlib.sha256(cont.encode("utf-8")).hexdigest()
 
 
@@ -74,6 +81,7 @@ class Memory:
         hash, accross sessions). Return True
         if a duplicate exist.
         """
+        app_log.debug("Verifing if memory entry already exist")
         self.cur.execute(
             """
             SELECT id FROM memory WHERE content_hash = %s
@@ -81,7 +89,11 @@ class Memory:
             (new_hash,)
         )
         existing = self.cur.fetchone()
-        return existing is not None
+        if not existing:
+            app_log.debug("Memory entry does not exist")
+            return False
+        app_log.debug("Memory entry already exist")
+        return True
 
 
     # ============================================================
@@ -97,7 +109,10 @@ class Memory:
             """
         )
 
-        app_log.debug("Initialising table 'memory' with vector embedding dimension of %s", self.emb_dim)
+        app_log.debug(
+            "Initialising table 'memory' with vector embedding dimension of %s",
+            EMB_MODEL_DIMENSION[EMBED_MODEL]
+        )
         create_mem_tbl = sql.SQL(
             """
             CREATE TABLE IF NOT EXISTS memory (
@@ -111,7 +126,7 @@ class Memory:
                 extraction      VARCHAR(20) NOT NULL CHECK (extraction IN ('manual', 'auto'))
             );
             """
-        ).format(dimension=sql.SQL(str(int(self.emb_dim))))
+        ).format(dimension=sql.SQL(str(int(EMB_MODEL_DIMENSION[EMBED_MODEL]))))
         self.cur.execute(create_mem_tbl)
 
         # HNSW index - must match the distance operator used in queries
@@ -150,7 +165,7 @@ class Memory:
 
     def _add_mem_embeddings(
         self,
-        embeddings: list[float],
+        embdings: list[float],
         cont_tkns: int,
         cont: str,
         cont_hash: str,
@@ -158,6 +173,7 @@ class Memory:
         extraction: Literal["manual", "auto"]
     ) -> str | None:
         """Add new memory entry."""
+        app_log.debug("Adding new %s extracted memory", extraction)
         try:
             self.cur.execute(
                 """
@@ -165,22 +181,21 @@ class Memory:
                 VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id;
                 """,
-                (str(embeddings), cont_tkns, cont, cont_hash, ctgry, extraction)
+                (str(embdings), cont_tkns, cont, cont_hash, ctgry, extraction)
             )
             row = self.cur.fetchone()
             self.conn.commit()
 
-            if row:
-                mem_id = str(row[0])
-                app_log.info("New memory entry saved to memory: id=%s", mem_id)
-                return mem_id
-            else:
+            if not row:
                 app_log.warning("Failed to save memory entry to memory")
                 return
+            mem_id = str(row[0])
+            app_log.info("New memory entry (id = %s) saved to memory", mem_id)
+            return mem_id
 
         except Exception as e:
             self.conn.rollback()
-            print(f"Database insert error: {e}")
+            app_log.warning("Database insert error: %s", e)
             return
 
 
@@ -193,18 +208,18 @@ class Memory:
         """Embeds texts and adds to memory logs."""
         cont_hash = self._hash_memory(cont)
         if self._is_mem_exist(cont_hash):
-            app_log.info("Memory already exist. Skipping")
+            app_log.debug("Skipping memory upload")
             return
 
-        cont, embeddings, cont_tkns = self.embed.embedding_content(cont)
-        if not embeddings:
-            app_log.warning("Failed to generate vector embedding. No memory entry saved")
+        response = embed.embedding_content(cont)
+        if not response:
             return
+        cont, embdings, cont_tkns = response
 
         cont_hash = self._hash_memory(cont)
 
         mem_id = self._add_mem_embeddings(
-            embeddings=embeddings,
+            embdings=embdings,
             cont_tkns=cont_tkns,
             cont=cont,
             cont_hash=cont_hash,
@@ -212,15 +227,22 @@ class Memory:
             extraction=extraction
         )
         if not mem_id:
-            app_log.warning("Failed to retrieve memory embedding id. No memory entry saved")
             return
         return mem_id, cont_tkns
 
 
-    def delete_mem(self, ids: list[str]):
+    def delete_mem(self, ids: list[str]) -> None:
         """Removes a list vector ID reference key directly from database."""
+        app_log.info("Deleting %d memory entry(s)", len(ids))
         del_count = 0
         for id in ids:
+            del_count += 1
+            app_log.debug(
+                "[%d/%d] Deleting memory entry (%s)",
+                del_count,
+                len(ids),
+                id
+            )
             self.cur.execute(
                 """
                 DELETE FROM memory
@@ -228,15 +250,15 @@ class Memory:
                 """,
                 (id,)
             )
-            del_count += 1
             self.conn.commit()
 
         count = len(ids) - del_count
         if not count == 0:
             app_log.warning("Failed to delete %d memory entry(s)", count)
-            return f"Failed to delete {count} memory entry(s)"
+            return
+
         app_log.info("%d memory entry(s) deleted", del_count)
-        return f"{del_count} memory entry(s) deleted"
+        return
 
 
     # ============================================================
@@ -245,6 +267,7 @@ class Memory:
 
     def get_mem_content_from_ids(self, ids: list[str]) -> dict[str, str]:
         """Return memory dictionary from a list of ids."""
+        app_log.debug("Fetching %d memory entry(s) from memory ids", len(ids))
         mem_dict = {}
         for id in ids:
             self.cur.execute(
@@ -258,21 +281,29 @@ class Memory:
             row = self.cur.fetchone()
 
             if not row:
-                app_log.warning("Failed to retrieve memory entry: Memory '%s' does not exist", id)
+                app_log.warning(
+                    "Failed to retrieve memory entry '%s': Memory does not exist. Skipping",
+                    id
+                )
                 continue
+
             mem_dict[str(row[0])] = str(row[1])
 
-        app_log.info("%d memory entries retrieved", len(mem_dict))
+        app_log.debug("%d memory entries retrieved", len(mem_dict))
         return mem_dict
 
 
     def query_similar_content(
         self,
         qry: str,
-        qry_embeddings: list[float],
+        qry_embdings: list[float],
         min_sim: float = 0.65
     ) -> list[dict[str, Any]] | None:
         """Queries database for similar content."""
+        app_log.debug(
+            "Searching for similar entries in memory: Minimum similarity score = %d",
+            min_sim
+        )
         self.cur.execute(
             """
             SELECT content, 1 - (embeddings <=> %s) AS cosine_similarity
@@ -282,26 +313,26 @@ class Memory:
             LIMIT %s;
             """,
             (
-                str(qry_embeddings),
-                str(qry_embeddings),
+                str(qry_embdings),
+                str(qry_embdings),
                 min_sim,
-                str(qry_embeddings),
+                str(qry_embdings),
                 self.qry_limit
             )
         )
         rows = self.cur.fetchall()
 
-        if rows:
-            app_log.info("%d memory entry(s) retrieved", len(rows))
-            return [
-                {
-                    "content": row[0],
-                    "similarity": float(row[1])
-                } for row in rows
-            ]
-        else:
-            app_log.info("Failed to retrieve memory entry: No entry exists in memory")
+        if not rows:
+            app_log.debug("Failed to retrieve memory entry: No entry exists in memory or Entry does not reached minimum similarity score")
             return
+
+        app_log.debug("%d memory entry(s) retrieved", len(rows))
+        return [
+            {
+                "content": row[0],
+                "similarity": float(row[1])
+            } for row in rows
+        ]
 
 
     # ============================================================
@@ -320,6 +351,10 @@ class Memory:
         Group 1 = category name
         Group 2 = everything after the brackets
         """
+        app_log.debug(
+            "Formatting %s extracted memory with category label",
+            extraction
+        )
         mem_dict = {}
 
         # Slice model output into line-by-line format
@@ -340,7 +375,7 @@ class Memory:
         return mem_dict
 
 
-    def _format_and_add_to_mem(
+    def _add_formatted_to_mem(
         self,
         ext_out: str,
         extraction: Literal["manual", "auto"]
@@ -350,18 +385,27 @@ class Memory:
         of created database ID(s).
         """
         created_ids = []
-        total_tkn_used = 0
+        tol_tkns = 0
+        count = 0
 
         mem_dict = self._format_extracted_mem(ext_out, extraction)
+        app_log.debug(
+            "%d memory entry(s) was extracted from user prompt",
+            len(mem_dict)
+        )
+
         for cont, ctgry in mem_dict.items():
-
+            count += 1
+            app_log.debug("Processing memory entry (%d/%d)", count, len(mem_dict))
             response = self._embed_content_and_add_mem(cont, ctgry, extraction)
-            mem_id, tkn_used = response if response else (None, 0)
-            if mem_id:
-                created_ids.append(mem_id)
-                total_tkn_used += total_tkn_used
+            if not response:
+                continue
+            mem_id, tkn_used = response
+            created_ids.append(mem_id)
+            tol_tkns += tol_tkns
 
-        return created_ids, total_tkn_used
+        app_log.debug("%d tokens used for embedding memory entry(s)", tol_tkns)
+        return created_ids, tol_tkns
 
 
     def extract_and_store_mem_from_conv(
@@ -375,55 +419,45 @@ class Memory:
         NOTE: Prompt must be provided for manual extraction.
         """
         # === MANUAL MEMORY EXTRACTION =======================================
-
         if extraction == "manual":
             app_log.debug(
-                "Manual memory extraction system prompt is implemented for model '%s'",
+                "Manual memory extraction using model '%s' is triggered",
                 self.model
             )
             system_prompt = self.mem_manual_prompt
             if not prompt:
                 app_log.warning("Memory extraction failed: No prompt provided")
                 return
-            new_conv = prompt
+            new_convs = [llm.user_message(prompt)]
 
         # === AUTO MEMORY EXTRACTION =========================================
-
         else:
             app_log.debug(
-                "Auto memory extraction system prompt is implemented for model '%s'",
+                "Auto memory extraction using model '%s' is triggered",
                 self.model
             )
             system_prompt = self.mem_prompt
-            new_conv = self.chat_logs.get_latest_conv_turn()
+            new_convs = self.chat_logs.get_latest_conv_turn()
 
         # === FORMAT CONTENT AND EXTRACT MEMORY ==============================
-
         try:
             old_convs = self.chat_logs.get_old_convs()
-            # ///////////////////////////////////////////////////////////////////
-            # UPDATE REQUIRED FOR NEW FORMATTING
-            fmt_prompt = (
-                f"# All previous conversation(s)\n\n"
-                f"{old_convs}\n\n"
-                f"---\n\n"
-                f"# New conversation\n\n"
-                f"{new_conv}"
+            fmt_prompt = format_context.old_and_new_convs(
+                old_convs=old_convs, new_convs=new_convs
             )
-            # ///////////////////////////////////////////////////////////////////
 
-            ext_out, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
-                model=self.model,
-                system_prompt=system_prompt,
-                prompt=fmt_prompt
+            response = llm.response_with_new_sys_prompt_and_context(
+                model=self.model, sys_prompt=system_prompt, prompt=fmt_prompt
             )
-            created_ids, total_tkn_used = self._format_and_add_to_mem(ext_out, extraction)
-            app_log.info("%d memory entry(s) extracted and saved", len(created_ids))
-            print(f"Memory saved")
+            if not response:
+                return
+            ext_out, p_tkns, o_tkns = response
+
+            created_ids, total_tkn_used = self._add_formatted_to_mem(ext_out, extraction)
             return created_ids, p_tkns, o_tkns, total_tkn_used
 
         except Exception as e:
-            app_log.error("Memory extraction synthesis failed: %s", e, exc_info=True)
+            app_log.warning("Memory extraction synthesis failed: %s", e, exc_info=True)
             return
 
 
@@ -435,13 +469,13 @@ class Memory:
         self,
         is_auto_mem_rtve: bool,
         prompt: str,
-        prompt_embeddings: list[float]
+        prompt_embdings: list[float]
     ) -> list[dict[str, Any]] | None:
         """Auto memory entry ability, returns memory entries if its toggled on."""
-        if is_auto_mem_rtve:
-            app_log.debug("Auto memory retrieve on. Querying memory for similar content")
-            return self.query_similar_content(prompt, prompt_embeddings)
-        return
+        if not is_auto_mem_rtve:
+            return
+        app_log.debug("Auto memory retrieve is currently on")
+        return self.query_similar_content(prompt, prompt_embdings)
 
 
     # //////////////////////////////////////////////////////////////
@@ -450,7 +484,7 @@ class Memory:
         self,
         enable_auto_memory_store: bool,
         model_max_tokens: int,
-        context: list[dict],
+        contxt: list[dict],
     ):
         """
         Auto store memory no prompts needed, 

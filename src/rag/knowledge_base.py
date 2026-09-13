@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from src.config import models
 
-from src.agent import ChatLogs, Embed
+from src.agent import chat_logs
 from src.models_database import EMB_MODEL_DIMENSION
 from src.rag.documents.document_knowledge_base import DocumentKnowledgeBase
 from src.logger import app_logger
@@ -16,6 +16,7 @@ from src.logger import app_logger
 app_log = app_logger(f"{__name__}.app")
 
 EMBED_MODEL = models.EMBED_MODEL
+ChatLogs    = chat_logs.ChatLogs
 
 
 class KnowledgeBase:
@@ -31,8 +32,6 @@ class KnowledgeBase:
         self.sess_name  = sess_name
 
         self.chat_logs  = chat_logs
-        self.embed      = Embed()
-        self.emb_dim    = EMB_MODEL_DIMENSION[EMBED_MODEL]
 
         self.doc_kw_bs  = DocumentKnowledgeBase(
             conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
@@ -55,7 +54,10 @@ class KnowledgeBase:
             """
         )
 
-        app_log.debug("Initialising tabe 'knowledge_base' with vector embedding dimension of %s", self.emb_dim)
+        app_log.debug(
+            "Initialising table 'knowledge_base' with vector embedding dimension of %s",
+            EMB_MODEL_DIMENSION[EMBED_MODEL]
+        )
         create_kw_bs_tbl = sql.SQL(
             """
             CREATE TABLE IF NOT EXISTS knowledge_base (
@@ -71,7 +73,7 @@ class KnowledgeBase:
                 metadata        JSONB NOT NULL DEFAULT '{{}}'::jsonb
             );
             """
-        ).format(dimension=sql.SQL(str(int(self.emb_dim))))
+        ).format(dimension=sql.SQL(str(int(EMB_MODEL_DIMENSION[EMBED_MODEL]))))
         self.cur.execute(create_kw_bs_tbl)
 
         # HNSW index - must match the distance operator used in queries
@@ -108,8 +110,9 @@ class KnowledgeBase:
     # CLEAR CONTENTS
     # ==================================================
 
-    def clear_sess_kw_bs(self, typ: Literal["document", "web_search"]):
+    def clear_sess_kw_bs(self, typ: Literal["document", "web_search"]) -> None:
         """Clear all contents related to specified type and current session."""
+        app_log.info("Clearing session '%s' knowledge base", self.sess_name)
         try:
             self.cur.execute(
                 """
@@ -127,12 +130,16 @@ class KnowledgeBase:
                     self.sess_name,
                     typ
                 )
-                return f"Failed to remove session '{self.sess_name}' knowledge base: '{typ}' contents not found in database"
+                return
 
-            app_log.info("Cleared all %s contents in sesssion '%s' knowledge base", typ, self.sess_name)
-            return f"Cleared session '{self.sess_name}' knowledge base: {typ}"
+            app_log.info(
+                "Cleared all %s contents in sesssion '%s' knowledge base",
+                typ,
+                self.sess_name
+            )
+            return
 
         except Exception as e:
             self.conn.rollback()
             app_log.warning("Database deletion error: %s", e)
-            return f"Database deletion error: {e}"
+            return

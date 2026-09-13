@@ -4,7 +4,7 @@ import re
 from src.config import models
 from src.config import prompts
 
-from src.agent import LLM, Tknizr
+from src.agent import llm
 
 
 MODEL                   = models.MODEL
@@ -21,9 +21,9 @@ def search_or_not(
     Query model to decide whether a question requires search or not.
     Returns either 'True' or 'False'.
     """
-    output, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
+    output, p_tkns, o_tkns = llm.response_with_new_sys_prompt_and_context(
         model=model,
-        system_prompt=SEARCH_OR_NOT_PROMPT,
+        sys_prompt=SEARCH_OR_NOT_PROMPT,
         prompt=prompt
     )
 
@@ -59,7 +59,7 @@ def _query_check(search_query: str) -> str:
     return search_query
 
 
-def generate_query(model: str, context: list[dict], prompt: str) -> tuple[str, int, int]:
+def generate_query(model: str, contxt: list[dict], prompt: str) -> tuple[str, int, int]:
     """Generate query from user input with dynamic date injection."""
     # Get current date
     current_date = datetime.datetime.now().strftime("%A, %d %B %Y")
@@ -67,10 +67,10 @@ def generate_query(model: str, context: list[dict], prompt: str) -> tuple[str, i
     # Update {{current_date}} in the system prompt to actual date
     live_qry_sys_prmpt = QUERY_PROMPT.replace("{{current_date}}", current_date)
 
-    query, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
+    query, p_tkns, o_tkns = llm.response_with_new_sys_prompt_and_context(
         model=model,
-        system_prompt=live_qry_sys_prmpt,
-        context=context,
+        sys_prompt=live_qry_sys_prmpt,
+        contxt=contxt,
         prompt=prompt
     )
 

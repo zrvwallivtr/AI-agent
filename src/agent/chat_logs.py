@@ -9,12 +9,12 @@ from src.config import models
 from src.config import prompts
 from src.config import postgres
 
-from src.agent.models.llm import LLM
-from src.agent.format_context import build_prompt
-from src.logger import app_logger
+from src import format_context
+from src.agent.models import llm
+from src import logger
 
 
-app_log = app_logger(f"{__name__}.app")
+app_log = logger.app_logger(f"{__name__}.app")
 
 MODEL           = models.MODEL
 SYS_PROMPT      = prompts.SYS_PROMPT
@@ -41,8 +41,8 @@ class ChatLogs:
 
     def _init_chat_logs_db(self):
         """Create session lookup and chat logs table if missing."""
-        app_log.info(
-            "Initialising chat_sessions table for session '%s'",
+        app_log.debug(
+            "Initialising table 'chat_sessions' for session '%s'",
             self.sess_name
         )
         self.cur.execute(
@@ -55,8 +55,8 @@ class ChatLogs:
             """
         )
 
-        app_log.info(
-            "Initialising chat_logs table for session '%s'",
+        app_log.debug(
+            "Initialising table 'chat_logs' for session '%s'",
             self.sess_name
         )
         self.cur.execute(
@@ -77,7 +77,7 @@ class ChatLogs:
         )
 
         # Index for session id lookup
-        app_log.info("Initialising index 'idx_chat_logs_session_id' on table 'chat_logs'")
+        app_log.debug("Initialising index 'idx_chat_logs_session_id' on table 'chat_logs'")
         self.cur.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_chat_logs_session_id
@@ -94,6 +94,7 @@ class ChatLogs:
 
     def get_sess_id(self) -> str | None:
         """Fetch session id from chat_sessions table."""
+        app_log.debug("Fetching session id for session '%s'", self.sess_name)
         self.cur.execute(
             """
             SELECT session_id
@@ -105,24 +106,22 @@ class ChatLogs:
         self.conn.commit()
         row = self.cur.fetchone()
 
-        if row:
-            sess_id = str(row[0])
-            app_log.info(
-                "Retrieved session id '%s' for session '%s'",
-                sess_id,
-                self.sess_name
-            )
-            return sess_id
-        else:
+        if not row:
             app_log.info(
                 "Session id for session '%s' not found: Session does not exists",
                 self.sess_name
             )
             return
 
+        sess_id = str(row[0])
+        app_log.debug("Retrieved session id '%s' for session '%s'", sess_id, self.sess_name)
+        return sess_id
 
-    def get_all_existing_sess_metadata(self) -> dict:
+
+
+    def get_all_existing_sess_metadata(self) -> dict | None:
         """Fetch all session names from database."""
+        app_log.debug("Fetching all session name(s) in the database")
         sess_dict = {}
         self.cur.execute(
             """
@@ -134,20 +133,21 @@ class ChatLogs:
         rows = self.cur.fetchall()
 
         if not rows:
-            app_log.info("No existing session found in chat_sessions")
-            return {}
+            app_log.debug("No existing session found on table 'chat_sessions' in the database")
+            return
 
         for row in rows:
             sess_dict[str(row[0])] = {
                 "session_name": str(row[1]),
                 "created_at": str(row[2])
             }
-        app_log.info("%d session(s) found in the chat_sessions", len(rows))
+        app_log.debug("%d session(s) found on the table 'chat_sessions' in the database", len(rows))
         return sess_dict
 
 
     def create_sess(self) -> str:
         """Create session entry on the chat_sessions table and return its session id."""
+        app_log.debug("Creating new session '%s'", self.sess_name)
         self.cur.execute(
             """
             INSERT INTO chat_sessions
@@ -163,7 +163,7 @@ class ChatLogs:
             raise RuntimeError("Failed to create session: Database return no ID.")
 
         app_log.info(
-            "Session '%s' created: Added new session entry to the chat_sessions table", 
+            "New session '%s' created: New session entry is added onto the table 'chat_sessions' in the database", 
             self.sess_name
         )
         return str(row[0])
@@ -178,7 +178,6 @@ class ChatLogs:
         sess_id = self.get_sess_id()
 
         if not sess_id:
-            app_log.info("Session '%s' does not exists. Creating new session", self.sess_name)
             sess_id = self.create_sess()
         return sess_id
 
@@ -205,6 +204,9 @@ class ChatLogs:
         - 'internal': Pre-written prompt.
         - 'external': User/model interactions.
         """
+        app_log.debug(
+            "Uploading the latest conversation turn to session '%s' caht log", self.sess_name
+        )
         metadata = self._tool_calls_metadata(attchmnts, qry_wth_urls)
 
         self.cur.execute(
@@ -215,15 +217,16 @@ class ChatLogs:
             (self.get_or_create_sess_id(), prompt, response, state, p_tkns, o_tkns, json.dumps(metadata or {}))
         )
         self.conn.commit()
-        app_log.info("New conversation turn added to session '%s' chat logs", self.sess_name)
+        app_log.debug("New conversation turn added to session '%s' chat logs", self.sess_name)
 
         # Resync messages
         self.actv_convs = self.get_actv_convs()
         app_log.debug("Resynced session '%s' conversations", self.sess_name)
 
 
-    def clear_sess_chat_logs(self) -> tuple[str, bool]:
+    def clear_sess_chat_logs(self) -> None:
         """Clear all session related chat logs."""
+        app_log.debug("Clearing chat logs for session '%s'", self.sess_name)
         self.cur.execute(
             """
             DELETE FROM chat_logs
@@ -239,12 +242,12 @@ class ChatLogs:
                 "Failed to clear chat logs: Session '%s' does not exists or has no chat logs",
                 self.sess_name
             )
-            return f"Failed to clear chat logs: Session '{self.sess_name}' does not exists or has no chat logs", False
-        app_log.info("Cleared session '%s' chat logs", self.sess_name)
+            return
 
+        app_log.info("Cleared all chat logs for session '%s'", self.sess_name)
         self.actv_convs = self.get_actv_convs() # resync messages
         app_log.debug("Resynced session '%s' conversations", self.sess_name)
-        return f"Cleared session '{self.sess_name}' chat logs", True
+        return
 
 
     # =============================================================
@@ -256,6 +259,8 @@ class ChatLogs:
         Get all messages in a session with filter options.
         If session does not exists, return system prompt.
         """
+        app_log.debug("Fetching all active conversations from session '%s' chat logs", self.sess_name)
+
         sys_prompt = [{"role": "system", "content": SYS_PROMPT}]
 
         self.cur.execute(
@@ -270,23 +275,23 @@ class ChatLogs:
         self.conn.commit()
         rows = self.cur.fetchall()
 
-        if rows:
-            convs = []
-            for row in rows:
-                convs.append({"role": "user", "content": row[0]})
-                convs.append({"role": "assistant", "content": row[1]})
+        if not rows:
             app_log.debug(
-                "%d conversation turns retrieved from session '%s'",
-                len(rows),
+                "No conversation found in session '%s' chat logs. Returning system prompt only",
                 self.sess_name
             )
-            return sys_prompt + convs
+            return sys_prompt
 
+        convs = []
+        for row in rows:
+            convs.append(llm.user_message(row[0]))
+            convs.append(llm.assistant_message(row[1]))
         app_log.debug(
-            "Session '%s' conversation does not exists. Returning system prompt only",
+            "%d conversation turns retrieved from session '%s' chat logs",
+            len(rows),
             self.sess_name
         )
-        return sys_prompt
+        return sys_prompt + convs
 
 
     def get_chat_history(self, filter: Literal["compressed", "not_compressed", "all"]) -> list[dict] | None:
@@ -294,6 +299,10 @@ class ChatLogs:
         Get all messages in a session with filter options.
         If session does not exists, return system prompt.
         """
+        app_log.debug(
+            "Fetching all conversation turns for session '%s' with the filter: %s", self.sess_name, filter
+        )
+
         if filter == "compressed":
             self.cur.execute(
                 """
@@ -328,23 +337,30 @@ class ChatLogs:
         self.conn.commit()
         rows = self.cur.fetchall()
 
-        if rows:
-            convs = []
-            for row in rows:
-                convs.append({"role": "user", "content": row[0]})
-                convs.append({"role": "assistant", "content": row[1]})
+        if not rows:
             app_log.debug(
-                "%d conversation turns retrieved from session '%s'",
-                len(rows),
+                "Failed to retrieve '%s' conversation turns from session '%s' chat logs",
+                filter,
                 self.sess_name
             )
-            return convs
+            return
 
-        return None
+        convs = []
+        for row in rows:
+            convs.append({"role": "user", "content": row[0]})
+            convs.append({"role": "assistant", "content": row[1]})
+        app_log.debug(
+            "%d '%s' conversation turns retrieved from session '%s' chat logs",
+            len(rows),
+            filter,
+            self.sess_name
+        )
+        return convs
 
 
     def get_latest_conv_turn(self) -> list[dict] | None:
         """Get the latest external user/assistant conversation turn from the chat log."""
+        app_log.debug("Fetching the latest conversation turn from session '%s' chat logs", self.sess_name)
         self.cur.execute(
             """
             SELECT prompt, response
@@ -359,21 +375,17 @@ class ChatLogs:
         self.conn.commit()
         row = self.cur.fetchone()
 
-        if row:
-            app_log.debug(
-                "Retrieved latest conversation turn from session '%s' chat logs",
-                self.sess_name
-            )
-            return [
-                {"role": "user", "content": row[0]},
-                {"role": "assistant", "content": row[1]}
-            ]
-        else:
-            app_log.debug(
-                "No conversation found in session '%s' chat logs: New session or session does not exists",
+        if not row:
+            app_log.warning(
+                "No conversation turns found in session '%s' chat logs: Session does not exists or contain no conversations",
                 self.sess_name
             )
             return
+
+        app_log.debug(
+            "Retrieved latest conversation turn from session '%s' chat logs", self.sess_name
+        )
+        return [{"role": "user", "content": row[0]}, {"role": "assistant", "content": row[1]}]
 
 
     def get_old_convs(self) -> list[dict] | None:
@@ -382,6 +394,7 @@ class ChatLogs:
         right before the latest external conversation from
         the chat log.
         """
+        app_log.debug("Fetching old conversation turns from session '%s' chat logs", self.sess_name)
         self.cur.execute(
             """
             SELECT prompt, response
@@ -399,23 +412,23 @@ class ChatLogs:
         self.conn.commit()
         rows = self.cur.fetchall()
 
-        if rows:
-            convs = []
-            for row in rows:
-                convs.append({"role": "user", "content": row[0]})
-                convs.append({"role": "assistant", "content": row[1]})
+        if not rows:
             app_log.debug(
-                "%d conversation turn(s) retrived form session '%s' chat logs",
-                len(rows),
-                self.sess_name
-            )
-            return convs
-        else:
-            app_log.debug(
-                "No conversation found in session '%s' chat logs: New session or session does not exists",
+                "No old conversation found in session '%s' chat logs: Session does not exists or contains no conversations",
                 self.sess_name
             )
             return
+
+        convs = []
+        for row in rows:
+            convs.append({"role": "user", "content": row[0]})
+            convs.append({"role": "assistant", "content": row[1]})
+        app_log.debug(
+            "%d old conversation turn(s) retrived form session '%s' chat logs",
+            len(rows),
+            self.sess_name
+        )
+        return convs
 
 
     # =============================================================
@@ -425,7 +438,7 @@ class ChatLogs:
     def _attachments_metadata(
         self,
         attchmnts: list[Path] | None
-    ) -> dict[str, dict[str, Any]]:
+    ) -> dict[str, dict[str, Any]] | None:
         """
         Add metadata to every filename in the list of filenames.
 
@@ -436,17 +449,28 @@ class ChatLogs:
             }
         }
         """
-        if attchmnts:
-            attchmnts_dict = {}
-            for attchmnt in attchmnts:
-                mime_type, _ = mimetypes.guess_type(attchmnt)
-                attchmnts_dict[attchmnt.name] = {
-                    "mime_type": mime_type,
-                    "size_bytes": attchmnt.stat().st_size if attchmnt.exists else 0
-                }
-                app_log.debug("Added metadata to attachment '%s'", attchmnt)
-            return attchmnts_dict
-        return {}
+        if not attchmnts:
+            app_log.debug("No attachment uploaded. Skipping")
+            return
+
+        app_log.debug("Extracting metadata from %d attachment(s)", len(attchmnts))
+        attchmnts_dict = {}
+        count = 0
+        for attchmnt in attchmnts:
+            count += 1
+            app_log.debug(
+                "Extracting metadate from attachment '%s' (%d/%d)",
+                attchmnt.name,
+                count,
+                len(attchmnts)
+            )
+            mime_type, _ = mimetypes.guess_type(attchmnt)
+            attchmnts_dict[attchmnt.name] = {
+                "mime_type": mime_type,
+                "size_bytes": attchmnt.stat().st_size if attchmnt.exists else 0
+            }
+            app_log.debug("Extracted metadata from attachment")
+        return attchmnts_dict
 
 
     def _web_search_metadata(
@@ -466,6 +490,7 @@ class ChatLogs:
         """
         # /////////////////////////////////////////////
         # MIGHT REQUIRE UPDATE FOR METADATA STRUCTURE
+        app_log.debug("Updating web search metadata")
         if qry_wth_urls:
             wb_search_dict = {}
             for qry_dict in qry_wth_urls:
@@ -488,11 +513,15 @@ class ChatLogs:
             "web_search": 
         }
         """
+        app_log.debug("Updating metadata for tool calls for the new conversation turn")
         tool_entries = {}
+
         if attchmnts:
             tool_entries["attachments"] = self._attachments_metadata(attchmnts)
+
         if qry_wth_urls:
             tool_entries["web_search"] = self._web_search_metadata(qry_wth_urls)
+
         return tool_entries
 
 
@@ -500,15 +529,18 @@ class ChatLogs:
     # CHAT COMPRESSION
     # =============================================================
 
-    def compress_active_conv(self, prompt: str):
+    def compress_active_conv(self, prompt: str, contxt: list[dict] | None = None):
         """Call model to summarise all conversations where 'is_compressed' = FALSE in the database."""
-        cmbind_prompt = build_prompt(
+        app_log.info("Compressing session '%s' chat logs", self.sess_name)
+
+        cmbind_prompt = format_context.build_prompt(
             prompt=prompt, cmp_convs=self.get_chat_history("not_compressed")
         )
 
-        smry, p_tkns, o_tkns = LLM.response_with_new_sys_prompt_and_context(
-            model=MODEL, system_prompt=COMPRESS_PROMPT, prompt=cmbind_prompt,
+        smry, p_tkns, o_tkns = llm.response_with_new_sys_prompt_and_context(
+            model=MODEL, sys_prompt=COMPRESS_PROMPT, contxt=contxt, prompt=cmbind_prompt,
         )
+        app_log.debug("Chat compression complete. Updating chat logs metadata")
 
         # Update 'is_compress' status for previous conversations
         self.cur.execute(
@@ -520,6 +552,10 @@ class ChatLogs:
             (self.get_sess_id(),)
         )
         self.conn.commit()
+        app_log.debug(
+            "All previous conversation turns for session '%s' has been listed as 'is_copmpressed = TRUE'",
+            self.sess_name
+        )
 
         self.add_conv_turn(
             prompt=prompt,
@@ -528,14 +564,20 @@ class ChatLogs:
             p_tkns=p_tkns,
             o_tkns=o_tkns
         )
+        app_log.info(
+            "Chat compression and chat logs metadata has been updated for session '%s'",
+            self.sess_name
+        )
 
         self.actv_convs = self.get_actv_convs() # resync messages
 
 
     def auto_compresss_active_conv(self):
         """Auto compress session."""
+        app_log.info("Chat compression was triggered for session '%s'", self.sess_name)
         prompt = "Summarise all previous conversations."
         self.compress_active_conv(prompt)
+        app_log.info("Auto compression complete. Continuing session")
 
 
     # =============================================================
@@ -544,5 +586,7 @@ class ChatLogs:
 
     def _close_conn(self):
         """Close connection to database."""
+        app_log.info("Closing connection to the database")
         self.cur.close()
         self.conn.close()
+        app_log.info("Database connection has closed")
