@@ -117,6 +117,10 @@ class Agent:
 
         est_next = curr_hist_tkns + (len(prompt) // 4)
 
+        if not self.tknizr.model_max_tkns:
+            app_log.warning("Failed to load 'manage token budget feature': Model maximum token limit not set")
+            return
+
         if self.tknizr.model_max_tkns - est_next - reserve < 0:
             app_log.info("Current tokens exceeds threshold")
             self.chat_logs.auto_compresss_active_conv()

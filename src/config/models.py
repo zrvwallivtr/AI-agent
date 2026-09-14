@@ -13,11 +13,6 @@ def _model_not_found(config_file: Path, model_type: str, model_max_tokens: str):
     'config.toml' does not match any of models on
     MODEL_MAX list in 'src/agent/tokens_handler.py'.
     """
-    #logger.critical(
-    #    "Unrecognised model: model=%s, missing_parameter=%s",
-    #    model_type,
-    #    model_max_tokens
-    #)
     error_message = (
         f"Error in {config_file}:\n"
         f"User selected '{model_type}' model does not match any in the existing data base, "
@@ -30,11 +25,6 @@ def _model_not_found(config_file: Path, model_type: str, model_max_tokens: str):
 def _check_if_value_is_valid(config_file: Path, field_name: str, value: Any):
     """Check if the value is a number in the field."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        # logger.critical(
-        #     "Invalid setting: field=%s, value=%s",
-        #     field_name,
-        #     value
-        # )
         print(f"Error in {config_file}:")
         print(f"'{field_name}' must be a number, got '{value}' instead.")
         sys.exit(1)
@@ -71,11 +61,29 @@ def _set_model_tokens(
 
 OLLAMA_HOST = _cfg["models"]["ollama_host"]
 
-MODEL, MODEL_MAX_TOKENS         = _set_model_tokens(_cfg, CONFIG_FILE, "chat", "chat_max_tokens")
-MEM_MODEL, MEM_MODEL_MAX_TOKENS = _set_model_tokens(_cfg, CONFIG_FILE, "memory", "memory_max_tokens")
-SEAR_MODEL, SEAR_MODEL_MAX_TOKENS = _set_model_tokens(_cfg, CONFIG_FILE, "web_search", "web_search_max_tokens")
-PM_MODEL, PM_MAX_TOKENS         = _set_model_tokens(_cfg, CONFIG_FILE, "project_manager", "pm_max_tokens")
-
-EMBED_MODEL, EMBED_MAX_TOKENS   = _set_model_tokens(_cfg, CONFIG_FILE, "embedding", "embedding_max_tokens")
+MODEL, MODEL_MAX_TOKENS = _set_model_tokens(
+    _cfg=_cfg,
+    config_file=CONFIG_FILE,
+    field="chat",
+    field_name="chat_max_tokens"
+)
+MEM_MODEL, MEM_MODEL_MAX_TOKENS = _set_model_tokens(
+    _cfg=_cfg,
+    config_file=CONFIG_FILE,
+    field="memory",
+    field_name="memory_max_tokens"
+)
+SEAR_MODEL, SEAR_MODEL_MAX_TOKENS = _set_model_tokens(
+    _cfg=_cfg,
+    config_file=CONFIG_FILE,
+    field="web_search",
+    field_name="web_search_max_tokens"
+)
+EMBED_MODEL, EMBED_MAX_TOKENS = _set_model_tokens(
+    _cfg=_cfg,
+    config_file=CONFIG_FILE,
+    field="embedding",
+    field_name="embedding_max_tokens"
+)
 
 FALLBACK_TOKENIZER = _cfg["models"]["fallback_tokenizer"]

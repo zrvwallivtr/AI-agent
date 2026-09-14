@@ -65,10 +65,7 @@ class SlashCmds:
     # ========================================================
 
     def cmd_memorise(
-        self,
-        prompt: str,
-        is_attchmnt: bool,
-        paths: list[Path] | None
+        self, prompt: str, is_attchmnt: bool, paths: list[Path] | None
     ) -> None:
         """
         Extract key info from user prompt and attachments (optional),
@@ -144,10 +141,7 @@ class SlashCmds:
 
 
     def cmd_recall(
-        self,
-        prompt: str,
-        is_attchmnt: bool,
-        paths: list[Path] | None
+        self, prompt: str, is_attchmnt: bool, paths: list[Path] | None
     ) -> str | None:
         """
         Retrieve and print relevant entries according to user prompt.
@@ -168,11 +162,14 @@ class SlashCmds:
         msgs = self.chat_logs.get_actv_convs()
 
         # === RETRIEVE MEMORY FROM DATABASE =========================
-        prompt, prompt_embdings, emb_tkns = embed.embedding_content(prompt)
+        embed_response = embed.embedding_content(prompt)
+        if not embed_response:
+            return
+        prompt, prompt_embdings, emb_tkns = embed_response
+
         mem_list = self.mem.query_similar_content(qry=prompt, qry_embdings=prompt_embdings)
 
-        # === MODEL ANSWER ==========================================
-        # Model interpret recalled memories
+        # === MODEL INTERPRET RECALLED MEMORIES =====================
         answer, p_tkns, o_tkns = llm.response_memory_recall_format(
             model=self.mem.model,
             sys_prompt=MEM_RECALL_INTERPRET_PROMPT,
@@ -196,10 +193,7 @@ class SlashCmds:
     # ========================================================
 
     def cmd_compress(
-        self,
-        prompt: str,
-        is_attchmnt: bool,
-        paths: list[Path] | None
+        self, prompt: str, is_attchmnt: bool, paths: list[Path] | None
     ) -> str | None:
         """
         Retrieve and print relevant entries according to user prompt.
@@ -213,9 +207,13 @@ class SlashCmds:
           -> Main instruction on compression focus.
         """
         # === FULL CONTEXT ==========================================
-        attchmnt_dict = self.doc_kw_bs.get_attachments_content(is_attchmnt=is_attchmnt, attch_paths=paths)
+        attchmnt_dict = self.doc_kw_bs.get_attachments_content(
+            is_attchmnt=is_attchmnt, attch_paths=paths
+        )
 
-        cmbind_prompt = format_context.build_prompt(prompt=prompt, attchmnt_dict=attchmnt_dict)
+        cmbind_prompt = format_context.build_prompt(
+            prompt=prompt, attchmnt_dict=attchmnt_dict
+        )
 
         # === COMPRESSION ===========================================
         if not prompt:
@@ -274,14 +272,18 @@ class SlashCmds:
         msgs = self.chat_logs.get_actv_convs()
 
         # === FULL CONTEXT FOR WEB SEARCH ===========================
-        attchmnt_dict = self.doc_kw_bs.get_attachments_content(is_attchmnt=is_attchmnt, attch_paths=paths)
+        attchmnt_dict = self.doc_kw_bs.get_attachments_content(
+            is_attchmnt=is_attchmnt, attch_paths=paths
+        )
 
         cmbind_sear_prompt = format_context.build_prompt(
             prompt=prompt, attchmnt_dict=attchmnt_dict
         )
 
         # === FULL CONTEXT FOR MODEL ANSWER =========================
-        response = self.sear_agt.query_surface_content(contxt=msgs, prompt=cmbind_sear_prompt)
+        response = self.sear_agt.query_surface_content(
+            contxt=msgs, prompt=cmbind_sear_prompt
+        )
         if not response:
             return "No results found"
         sear_results, gen_qry_p_tkns, gen_qry_o_tkns = response
@@ -292,10 +294,13 @@ class SlashCmds:
         msgs.append(llm.user_message(cmbind_prompt))
 
         # === MODEL ANSWER ==========================================
-        answer, ans_p_tkns, ans_o_tkns = llm.model_response(
+        ans_response = llm.model_response(
             model=MODEL,
             msgs=msgs
         )
+        if not ans_response:
+            return
+        answer, ans_p_tkns, ans_o_tkns = ans_response
 
         # === SAVE MESSAGES =========================================
         self.chat_logs.add_conv_turn(

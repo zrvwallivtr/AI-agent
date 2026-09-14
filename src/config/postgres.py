@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 
 from src.config.files_and_directories import ENV_PATH
 
+
 load_dotenv(dotenv_path=ENV_PATH)
 
 DBNAME = os.getenv("PGDB_DBNAME")
