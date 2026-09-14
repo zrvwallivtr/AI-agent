@@ -1,13 +1,8 @@
 import ollama
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.syntax import Syntax
 
 from src.agent.models.ollama import ollama_clt
 from src.logger import app_logger, prompt_logger
 
-
-console = Console()
 
 app_log     = app_logger(f"{__name__}.app")
 prompt_log  = prompt_logger(f"{__name__}.prompt")
@@ -39,64 +34,26 @@ def user_message(content: str) -> dict:
 def model_response(model: str, msgs: list[dict]) -> tuple[str, int, int] | None:
     """Response using specified model, streams output."""
     response = ""
-    line_buffer = ""
-    in_code_block = False
-    current_lang = "text"
     p_tkns   = 0
     o_tkns   = 0
 
-    # Send message to the model
     if msgs:
         prompt_log.info(msgs[-1].get("content", ""))
+
     app_log.debug("Sending messages to model '%s'", model)
+
     stream = ollama_clt.chat(model=model, messages=msgs, stream=True)
 
-    # Stream model output in markdown
-    for chunk in stream:
-        token = chunk.message.content
-        response += token
-        line_buffer += token
+    for chnk in stream:
+        tkn = chnk.message.content
+        response += tkn
+        print(tkn, end="", flush=True)
 
-        # Render and flush completed lines as markdown
-        if "\n" in line_buffer:
-            lines = line_buffer.split("\n")
-            for line in lines[:-1]:
+        if chnk.done:
+            p_tkns = chnk.prompt_eval_count or 0
+            o_tkns = chnk.eval_count or 0
 
-                # Detect start/end of code fence
-                if line.strip().startswith("```"):
-                    if not in_code_block:
-                        current_lang = line.strip().lstrip("`").strip() or "text"
-                        in_code_block = True
-                    else:
-                        in_code_block = False
-                        current_lang = "text"
-                    continue
-
-                if in_code_block:
-                    syntax = Syntax(
-                        line,
-                        current_lang,
-                        theme="monokai",
-                        word_wrap=True
-                    )
-                    console.print(syntax)
-                else:
-                    if line.strip():
-                        console.print(Markdown(line))
-                    else:
-                        console.print()
-
-            line_buffer = lines[-1]
-
-        if chunk.done:
-            p_tkns = chunk.prompt_eval_count or 0
-            o_tkns = chunk.eval_count or 0
-
-    if line_buffer:
-        if in_code_block:
-            console.print(Syntax(line_buffer, current_lang, theme="monokai", word_wrap=True))
-        elif line_buffer.strip():
-            console.print(Markdown(line_buffer))
+    print()
 
     if not response:
         app_log.warning("Model failed to generate response from the provided messages")

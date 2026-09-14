@@ -1,14 +1,14 @@
 import json
 import logging
-import logging.config
-import sys
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
-from src.config.files_and_directories import APP_LOG_FILE, PROMPT_LOG_FILE
+from src.config import files_and_directories as files_n_dir
+from src.cli import interface
 
 
-DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+APP_LOG_FILE    = files_n_dir.APP_LOG_FILE
+PROMPT_LOG_FILE = files_n_dir.PROMPT_LOG_FILE
+DATE_FORMAT     = "%Y-%m-%d %H:%M:%S"
 
 
 # ======================================================
@@ -41,32 +41,30 @@ _app_log_config.setFormatter(AppLogFormatter(datefmt=DATE_FORMAT))
 _app_log_config.setLevel(logging.INFO)
 
 
-def app_logger(name: str) -> logging.Logger:
+def app_logger(name: str, verbose: bool = False) -> logging.Logger:
     """
     Returns a module logger configured to write
     json to '~/.agent_app/logs/app.log' and
-    convert to readable output to the terminal.
+    convert to readable output to the terminal
+    with rich.
     """
     logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
 
-    # Avoid adding duplicate handlers if get_logger is called multiple times
     if not logger.handlers:
         logger.addHandler(_app_log_config)
 
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-                datefmt="%H:%M:%S"
-            )
-        )
-        logger.addHandler(console_handler)
-
-        logger.propagate = False # Keep logs isolated to the log file
+        if interface.console_handler is not None:
+            logger.addHandler(interface.console_handler)
+        logger.propagate = False
 
     return logger
+
+
+def set_verbose(verbose: bool):
+    """Call once right after argparse parses args, before any command runs."""
+    if interface.console_handler:
+        interface.console_handler.setLevel(logging.DEBUG if verbose else logging.INFO)
 
 
 # ======================================================

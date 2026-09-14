@@ -8,16 +8,20 @@ from src.agent import ollama
 from src.agent import chat_logs
 from src.core import Agent
 from src.rag import knowledge_base
+from src import logger
+from src.cli import interface
+
 
 conn = postgres.conn
 cur = conn.cursor()
 
-ollama_clt     = ollama.ollama_clt
+app_log = logger.app_logger(f"{__name__}.app")
+
 ChatLogs        = chat_logs.ChatLogs
 KnowledgeBase   = knowledge_base.KnowledgeBase
 
 
-def del_sess(sess_name: str | None = None) -> str:
+def del_sess(sess_name: str | None = None) -> None:
     """
     Delete session related chat logs and database contents. If 'session'
     is not specified, delete default session related contents.
@@ -27,145 +31,33 @@ def del_sess(sess_name: str | None = None) -> str:
 
     sess_id = chat_logs.get_sess_id()
     if not sess_id:
-        return f"Failed to delete session: Session '{sess_name}' does not exist"
+        app_log.warning("Failed to delete session: Session '%s' does not exist", sess_name)
+        return
 
     # Clear session chat logs
-    response, has_del_chat = chat_logs.clear_sess_chat_logs()
-    if response:
-        print(response)
+    has_del_chat = chat_logs.clear_sess_chat_logs()
 
     # Clear session knowledge base
     response = kw_bs.clear_sess_kw_bs("document")
     # response = kw_bs.clear_sess_kw_bs("web_search")
 
-    # DELETE SESSION
-    # Ensure all session related contents are cleared
-    if has_del_chat:
-        cur.execute(
-            """
-            DELETE FROM chat_sessions
-            WHERE session_id = %s;
-            """,
-            (sess_id,)
-        )
-        conn.commit()
-        del_count = cur.rowcount
-        conn.commit()
-
-        if del_count == 0:
-            return f"Failed to delete session: session={sess_name}"
-        return f"Session deleted: session={sess_name}"
-
-    # Error message
-    del_chat_err = ""
+    # Delete session - ensure all session related contents are cleared
     if not has_del_chat:
-        del_chat_err = f"- Unable to clear session chat logs\n"
-    err_msg = (
-        f"Failed to delete session:\n"
-        f"\tSession: {sess_name}\n"
-        f"\tError:\n"
-        f"\t{del_chat_err}\n"
+        app_log.warning("Failed to clear session '%s' chat logs", sess_name)
+
+    cur.execute(
+        """
+        DELETE FROM chat_sessions
+        WHERE session_id = %s;
+        """,
+        (sess_id,)
     )
-    return err_msg
-    
+    conn.commit()
+    del_count = cur.rowcount
+    conn.commit()
 
-# =========================================================
-# GENERAL
-#
-# Main tools:
-# - call Agent to answer question
-# - delete default chat file in DEFAULT_PATH
-# =========================================================
-
-class General:
-    @staticmethod
-    def question(
-        prompt: str,
-        sess_name: str | None = None,
-        project: str | None = None
-    ):
-        """Ask question only, not flags."""
-        agent   = Agent(sess_name=sess_name, project=project)
-        answer  = agent.ask(prompt=prompt)
+    if del_count == 0:
+        app_log.warning("Failed to delete session: Session '%s' does not exist", sess_name)
         return
-
-    @staticmethod
-    def reset_default():
-        """Clear active conversation and chat history."""
-        del_sess()
-
-    @staticmethod
-    def installed_models():
-        model_list = ollama_clt.list()
-
-        print("Installed models:")
-        for model in model_list.get("models", []):
-            print(f"- {model['model']}")
-
-
-# =========================================================
-# SESSION CLASS
-# =========================================================
-
-class Session:
-    def __init__(self, sess_name: str):
-        self.sess_name  = sess_name
-
-
-    def create_session(
-        self,
-        model: str,
-        prompt: str | None = None
-    ) -> str | None:
-        """Create session and response to user question."""
-        chat_logs = ChatLogs(conn=conn, sess_name=self.sess_name)
-        chat_logs.create_sess()
-
-        if not prompt:
-            return f"New session created: session={self.sess_name}"
-        return General.question(prompt=prompt, sess_name=self.sess_name)
-
-
-    def delete_session(self) -> str:
-        """Delete session's related files."""
-        response = del_sess(self.sess_name)
-        return response
-
-
-    def list_session(self):
-        """List all user created sessions, do not display session's chat history."""
-        chat_logs = ChatLogs(conn=conn, sess_name=self.sess_name)
-        sess_dict = chat_logs.get_all_existing_sess_metadata()
-
-        print("AVAILABLE SESSION(S)")
-        print("====================")
-        print("CREATED AT\t\t\t\tSESSION NAME")
-        for sess in sess_dict:
-            print(f"{sess_dict[sess]["created_at"]}\t{sess_dict[sess]["session_name"]}")
-        print("\n")
-
-
-# =========================================================
-# File class
-# =========================================================
-
-class File:
-    def __init__(self, sess_name: str):
-        self.sess_name = sess_name
-
-
-    def attachments_with_prompt(
-        self,
-        model: str,
-        prompt: str,
-        paths: list[Path],
-        project: str | None = None
-    ):
-        """Combine contents in document(s) with user prompt."""
-        agent   = Agent(sess_name=self.sess_name, project=project)
-        answer  = agent.ask(
-            prompt=prompt,
-            is_attchmnt=True,
-            paths=paths
-        )
-        return
+    app_log.info("Session '%s' and related data deleted from database", sess_name)
+    return

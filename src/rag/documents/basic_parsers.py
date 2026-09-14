@@ -82,7 +82,7 @@ class BasicParsers:
     # MICROSOFT OFFICE
     # =======================================================
 
-    def _read_docx(self, path: Path) -> str:
+    def _read_docx(self, path: Path) -> str | None:
         """Extracts structural text elements line by line from document."""
         try:
             import docx
@@ -94,15 +94,23 @@ class BasicParsers:
                 if clean_text:
                     paragraphs.append(clean_text)
             
-            app_log.info("Extracted docx text content line by line: path='%s', paragraphs=%d", path, len(paragraphs))
+            app_log.info(
+                "Text content extracted from DOCX file '%s' line by line: Paragraphs=%d",
+                path,
+                len(paragraphs)
+            )
             return "\n".join(paragraphs)
 
         except Exception as e:
-            app_log.error("Failed to read DOCX file: path='%s', error=%s", path, e)
-            return f"Failed to extract file content"
+            app_log.warning(
+                "Failed to read DOCX file '%s': %s",
+                path,
+                e
+            )
+            return
 
 
-    def _read_xlsx(self, path: Path) -> str:
+    def _read_xlsx(self, path: Path) -> str | None:
         """Extracts text content from spreadsheet row by row."""
         try:
             import openpyxl
@@ -119,36 +127,44 @@ class BasicParsers:
                         clean_row = [str(cell).strip() if cell is not None else "" for cell in row]
                         excel_text.append(" | ".join(clean_row))
 
-            app_log.info("Extracted text content from xlsx file row by row: path='%s', sheets=%d", path, len(wb.sheetnames))
+            app_log.info(
+                "Text content extracted from XLSX file '%s' row by row: Sheets=%d",
+                path,
+                len(wb.sheetnames)
+            )
             return "\n".join(excel_text)
 
         except Exception as e:
-            app_log.error("Failed to read xlsx file: path=%s, error=%s", path, e)
-            return f"Failed to extract file content"
+            app_log.warning(
+                "Failed to read XLSX file '%s': %s",
+                path,
+                e
+            )
+            return
 
 
     # =======================================================
     # DATA & CONFIGURATION FORMATS
     # =======================================================
 
-    def _read_csv(self, path: Path) -> str:
+    def _read_csv(self, path: Path) -> str | None:
         """Reads csv as plain text files."""
         return self.read_txt(path, "csv")
 
 
-    def _read_yaml(self, path: Path) -> str:
+    def _read_yaml(self, path: Path) -> str | None:
         return self.read_txt(path, "yaml")
 
 
-    def _read_yml(self, path: Path) -> str:
+    def _read_yml(self, path: Path) -> str | None:
         return self.read_txt(path, "yml")
 
 
-    def _read_toml(self, path: Path) -> str:
+    def _read_toml(self, path: Path) -> str | None:
         return self.read_txt(path, "toml")
 
 
-    def _read_xml(self, path: Path) -> str:
+    def _read_xml(self, path: Path) -> str | None:
         return self.read_txt(path, "xml")
 
 
@@ -156,22 +172,30 @@ class BasicParsers:
     # Text documents
     # =======================================================
 
-    def _read_pdf(self, path: Path) -> str:
+    def _read_pdf(self, path: Path) -> str | None:
         """Extracts pdf text content layout page by page."""
         try:
             import pdfplumber
             with pdfplumber.open(path) as pdf:
                 pages = [page.extract_text() for page in pdf.pages]
                 pages = [p for p in pages if p]
-                app_log.info("Extracted PDF text content page by page: path='%s', pages=%d", path, len(pdf.pages))
+                app_log.info(
+                    "Text content extracted from PDF file '%s' page by page: Pages=%d",
+                    path,
+                    len(pdf.pages)
+                )
                 return "\n\n".join(pages)
 
         except Exception as e:
-            app_log.error("Failed to read PDF file: path=%s, error=%s", path, e)
-            return f"Failed to extract file content"
+            app_log.warning(
+                "Failed to read PDF file '%s': %s",
+                path,
+                e
+            )
+            return
 
 
-    def _read_epub(self, path: Path) -> str:
+    def _read_epub(self, path: Path) -> str | None:
         """Extracts plain text blocks from internal EPUB XHTML document payloads."""
         try:
             from ebooklib import epub
@@ -193,57 +217,69 @@ class BasicParsers:
                         chapters_text.append(plain_text)
 
             app_log.info(
-                "Extracted plain text blocks from EPUB file: path='%s', chapters=%d",
+                "Plain text blocks extracted from EPUB file '%s': Chapters=%d",
                 path,
                 len(chapters_text)
             )
             return "\n\n".join(chapters_text)
 
         except Exception as e:
-            app_log.error("Failed to read EPUB file: path='%s', error=%s", path, e)
-            return f"Failed to extract file content"
+            app_log.warning(
+                "Failed to read EPUB file '%s': %s",
+                path,
+                e
+            )
+            return
 
 
     # =======================================================
     # PROGRAMMING
     # =======================================================
 
-    def _read_code(self, path: Path) -> str:
+    def _read_code(self, path: Path) -> str | None:
         """Reads code files and wraps them in markdown code fences."""
         lang    = path.suffix.lstrip(".")
         content = self.read_txt(path, f"{lang}")
+        if not content:
+            return
 
-        return f"```{lang}\n{content}\n```"
+        md_code_block = f"```{lang}\n{content}\n```"
+        return md_code_block
 
 
     # =======================================================
     # Plain text
     # =======================================================
 
-    def read_txt(self, path: Path, file_type: str = "txt") -> str:
+    def read_txt(self, path: Path, file_type: str = "txt") -> str | None:
         """Reads plain text files using UTF-8 validation."""
         try:
             cont = path.read_text(encoding="utf-8", errors="ignore")
             clean_cont = "".join(c for c in cont if c.isprintable() or c in "\n\r\t")
-            app_log.info("Extracted '%s' file content as plain text: path='%s'", file_type, path)
+            app_log.info("Extracted '%s' file content in '%s' as plain text", file_type, path)
             return clean_cont
+
         except Exception as e:
-            app_log.error(f"Failed to read '%s' file: path='%s', error=%s", file_type, path, e)
-            return f"Failed to extract file content"
+            app_log.warning(
+                "Failed to read file '%s': %s",
+                path,
+                e
+            )
+            return
 
 
     # =======================================================
     # READ
     # =======================================================
 
-    def read_document(self, path: Path) -> str:
+    def read_document(self, path: Path) -> str | None:
         """Return file content as a string using mapped parsers."""
         safe_path = _validate_path(path)
 
         if not safe_path.exists():
-            raise FileNotFoundError(f"'{safe_path}' does not exist")
+            raise FileNotFoundError(f"File '{safe_path}' does not exist")
         if not safe_path.is_file():
-            raise ValueError(f"'{safe_path}' is not a regular file")
+            raise ValueError(f"File '{safe_path}' is not a regular file")
 
         ext = safe_path.suffix.lower()
         parser = self.formats.get(ext, self.read_txt)

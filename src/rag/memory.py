@@ -71,7 +71,7 @@ class Memory:
         Return a SHA-256 hash of raw text content,
         used for dedupe before embedding.
         """
-        app_log.debug("Hashing memory from given content")
+        app_log.debug("Hashing text from given content")
         return hashlib.sha256(cont.encode("utf-8")).hexdigest()
 
 
@@ -323,7 +323,7 @@ class Memory:
         rows = self.cur.fetchall()
 
         if not rows:
-            app_log.debug("Failed to retrieve memory entry: No entry exists in memory or Entry does not reached minimum similarity score")
+            app_log.debug("Failed to retrieve relevant memory: No entry exists in memory or Entry does not reached minimum similarity score")
             return
 
         app_log.debug("%d memory entry(s) retrieved", len(rows))

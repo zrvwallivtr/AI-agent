@@ -224,7 +224,7 @@ class ChatLogs:
         app_log.debug("Resynced session '%s' conversations", self.sess_name)
 
 
-    def clear_sess_chat_logs(self) -> None:
+    def clear_sess_chat_logs(self) -> bool:
         """Clear all session related chat logs."""
         app_log.debug("Clearing chat logs for session '%s'", self.sess_name)
         self.cur.execute(
@@ -242,12 +242,12 @@ class ChatLogs:
                 "Failed to clear chat logs: Session '%s' does not exists or has no chat logs",
                 self.sess_name
             )
-            return
+            return False
 
         app_log.info("Cleared all chat logs for session '%s'", self.sess_name)
         self.actv_convs = self.get_actv_convs() # resync messages
         app_log.debug("Resynced session '%s' conversations", self.sess_name)
-        return
+        return True
 
 
     # =============================================================

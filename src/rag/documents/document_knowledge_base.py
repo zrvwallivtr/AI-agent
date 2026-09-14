@@ -50,6 +50,7 @@ class DocumentKnowledgeBase:
         Return a SHA-256 hash of raw text content,
         used for dedupe before embedding.
         """
+        app_log.debug("Hashing text from given content")
         return hashlib.sha256(cont.encode("utf-8")).hexdigest()
 
 
@@ -58,6 +59,7 @@ class DocumentKnowledgeBase:
         Check if the same document content chunk was uploaded before (same
         hash, accross sessions). Return embeddings if a duplicate exist.
         """
+        app_log.debug("Verifing if document content chunk already exist")
         self.cur.execute(
             """
             SELECT content, embeddings, prompt_tokens
@@ -69,8 +71,10 @@ class DocumentKnowledgeBase:
         )
         row = self.cur.fetchone()
         if row is None:
+            app_log.debug("Document content chunk does not exist")
             return None
 
+        app_log.debug("Document content chunk already exist")
         chnk_cont, embdings, chnk_tkns = row
         return chnk_cont, embdings, chnk_tkns
 
@@ -82,15 +86,16 @@ class DocumentKnowledgeBase:
     def get_document_metadata_from_path(self, path: Path) -> tuple[str, str, int] | None:
         """Return name, mime type and size bytes from given path."""
         if not path.exists():
-            app_log.warning("'%s' does not exists in '%s'", path.name, UPLOAD_DIR)
+            app_log.warning(
+                "File '%s' is not in the upload directory '%s'",
+                path.name,
+                UPLOAD_DIR
+            )
             return
 
         # Prevent duplicated name in the metadata
         name = path.name
         counter = 1
-        while name in self.get_all_docs_names():
-            name = f"{path.stem}({counter}){path.suffix}"
-            counter += 1
 
         mime, _ = mimetypes.guess_type(path)
         mime = mime or "unknown"
@@ -105,7 +110,7 @@ class DocumentKnowledgeBase:
 
     def store_attachments(self, attchmnt_dict: dict[Path, dict[str, str]]) -> None:
         app_log.info(
-            "Storing %d uploaded attachment(s) to session '%s' knowledge base",
+            "Storing %d attachment(s) to session '%s' knowledge base",
             len(attchmnt_dict),
             self.sess_name
         )
@@ -116,21 +121,7 @@ class DocumentKnowledgeBase:
                 path=doc_path, cont=cont, format=format
             )
             if not count:
-                app_log.warning(
-                    "Failed to store attachment '%s' to session '%s' knowledge base",
-                    doc_path,
-                    self.sess_name
-                )
-                print("Error: Failed to embed/store attachment to knowledge base")
                 continue
-
-            app_log.info(
-                "Stored attachment '%s' as %s chunks to session '%s' knowledge base",
-                doc_path,
-                count,
-                self.sess_name
-            )
-            print("Attachment stored to session knowledge base")
         return
 
 
@@ -149,12 +140,12 @@ class DocumentKnowledgeBase:
         attchmnt_dict = {}
         for path in attch_paths:
 
-            cont, format = self.doc_reader.read_document(path)
-            if not cont:
-                app_log.warning("Failed to extract content from '%s'. Skipping", path.name)
+            out = self.doc_reader.read_document(path)
+            if not out:
                 continue
+            cont, format = out
 
-            app_log.info("Content extracted from '%s'", path.name)
+            app_log.info("Content extracted from attachment '%s'", path)
             attchmnt_dict[path] = {"content": cont, "format": format}
 
         return attchmnt_dict
@@ -175,8 +166,9 @@ class DocumentKnowledgeBase:
         size: int,
         cont_hash: str,
         exprs_at: datetime | None = None,
-    ) -> str:
-        """Upload documents to knowledge base."""
+    ) -> None:
+        """Upload a document to knowledge base."""
+        app_log.debug("Uploading attachment to knowledge base")
         metadata = {
             "document_name": doc_name,
             "document_chunk_index": chnk_idx,
@@ -202,13 +194,15 @@ class DocumentKnowledgeBase:
                 )
             )
             self.conn.commit()
-            app_log.info("Added document '%s' to session '%s' knowledge base", doc_name, self.sess_name)
-            return f"Added document '{doc_name}' to knowledge base"
+            app_log.info(
+                "Added document '%s' to session '%s' knowledge base", doc_name, self.sess_name
+            )
+            return
 
         except Exception as e:
             self.conn.rollback()
             app_log.warning("Database insert error: %s", e)
-            return f"Database insert error: {e}"
+            return
 
 
     # ================================================
@@ -227,21 +221,19 @@ class DocumentKnowledgeBase:
         """
         doc_data = self.get_document_metadata_from_path(path)
         if not doc_data:
-            app_log.warning(
-                "Failed to read '%s': File does not exists in %s",
-                path.name,
-                UPLOAD_DIR
-            )
             return
         name, mime, size = doc_data
 
         chnks = []
 
         if not cont and not format:
-            cont, format = self.doc_reader.read_document(path)
+            out = self.doc_reader.read_document(path)
+            if not out:
+                return
+            cont, format = out
 
         # Langchain text splitters
-        app_log.info("Langchain Text Splitters splitting '%s' content to chunks", path.name)
+        app_log.info("Langchain Text Splitters splitting '%s' content to chunks", path)
         from src.rag.splitters import txt_spltr, md_spltr
         if format == "txt":
             chnks = txt_spltr.split_text(cont)
@@ -256,22 +248,26 @@ class DocumentKnowledgeBase:
             chnk_hash = self._hash_content(chnk)
             doc_chnk = self._is_doc_cont_chunk_exist(chnk_hash)
 
-            # Skip embedding if already exists
             if doc_chnk:
-                app_log.info(
+                # Skip embedding if already exists
+                app_log.debug(
                     "Document already exists in session '%s' knowledge base. Skipping re-embed",
                     self.sess_name
                 )
                 chnk_cont, embdings, chnk_tkns = doc_chnk
 
             else:
-                chnk_cont, embdings, chnk_tkns = embed.embedding_content(chnk)
+                response = embed.embedding_content(chnk)
+                if not response:
+                    continue
+                chnk_cont, embdings, chnk_tkns = response
+
             hash = self._hash_content(chnk_cont)
 
             # Skip chunks that failed
             if not embdings:
                 app_log.warning(
-                    "Error occur in embedding chunk in '%s'. Skipping chunk", str(path)
+                    "Error occur in embedding chunk in '%s'. Skipping chunk", path
                 )
                 continue
 
@@ -296,38 +292,40 @@ class DocumentKnowledgeBase:
     # FROM DOCUMENTS IN KNOWLEDGE BASE
     # ================================================
 
-    def _get_all_docs_metadata(self) -> list[tuple[Any, Any]] | str:
+    def _get_all_docs_metadata(self) -> list[tuple[Any, Any]] | None:
         """Return a list of all uploaded documents data in the database."""
+        app_log.debug("Fetching all documents metadata in session '%s' knowledge base", self.sess_name)
         try:
             self.cur.execute(
                 """
                 SELECT created_at, metadata
                 FROM knowledge_base
                 WHERE session_id = %s AND type = %s
+                    AND (metadata->>'document_chunk_index')::int = 0
                 """,
                 (self.chat_logs.get_sess_id(), "document")
             )
             rows = self.cur.fetchall()
 
             if not rows:
-                app_log.warning(
-                    "Failed to retrieve documents: Session '%s' knowledge base is empty",
+                app_log.debug(
+                    "Failed to retrieve any documents metadata: Session '%s' knowledge base is empty",
                     self.sess_name
                 )
-                return f"Failed to retrieve documents: Session '{self.sess_name}' knowledge base is empty"
+                return
             return rows
 
         except Exception as e:
             self.conn.rollback()
             app_log.warning("Database query documents data error: %s", e)
-            return f"Database query documents data error: {e}"
+            return
 
 
-    def get_all_docs_names(self) -> list[str]:
+    def get_all_docs_names(self) -> list[str] | None:
         """Return a list of all uploaded documents names in the database."""
         rows = self._get_all_docs_metadata()
-        if isinstance(rows, str):
-            return []
+        if not rows:
+            return
 
         # Unpack data in metadata
         doc_names = []
@@ -340,11 +338,11 @@ class DocumentKnowledgeBase:
     # LIST CONTENTS
     # ================================================
 
-    def list_all_uploaded_documents(self) -> str:
+    def list_all_uploaded_documents(self) -> str | None:
         """Return a list of all document(s) in the database."""
         rows = self._get_all_docs_metadata()
-        # if isinstance(rows, str):
-        #     return rows
+        if not rows:
+            return
 
         # Unpack data in metadata
         lines = [
@@ -369,6 +367,11 @@ class DocumentKnowledgeBase:
         min_sim: float = 0.65
     ) -> list[dict[str, Any]] | None:
         """Queries knowledge base for similar content."""
+        app_log.debug(
+            "Searching for similar content in session '%s' knowledge base: Minimum similarity score = %d",
+            self.sess_name,
+            min_sim
+        )
         kw_dict = []
 
         self.cur.execute(
@@ -399,6 +402,9 @@ class DocumentKnowledgeBase:
             app_log.info("%d retrieved from session '%s' knowledge base", len(rows), self.sess_name)
             return kw_dict
         else:
+            app_log.debug(
+                "Failed to retrieve relevant document chunks: Session knowledge base is empty or no content reached minimum similarity score"
+            )
             return
 
 
@@ -413,10 +419,8 @@ class DocumentKnowledgeBase:
         prompt_embdings: list[float]
     ) -> list[dict[str, Any]] | None:
         """Auto fetches previous documents contents ability, return relevant contents if its toggled on."""
-        if is_auto_doc_rtve:
-            app_log.debug(
-                "Auto document retrieve on. Querying session '%s' knowledge_base for relevant documents",
-                self.sess_name
-            )
-            return self.query_similar_knowledge(prompt, prompt_embdings)
-        return
+        if not is_auto_doc_rtve:
+            return
+
+        app_log.debug("Auto document retrieve is currently on")
+        return self.query_similar_knowledge(prompt, prompt_embdings)

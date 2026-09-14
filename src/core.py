@@ -190,7 +190,18 @@ class Agent:
                 # // END HERE //
 
         # === FULL CONTEXT ======================================
-        prompt, prompt_embdings, prompt_tkns = embed.embedding_content(prompt)
+        embed_response = embed.embedding_content(prompt)
+        if embed_response:
+            prompt, prompt_embdings, prompt_tkns = embed_response
+        else:
+            app_log.warning(
+                "Turning off features that requires embeddings: "
+                "Auto memory retrieval, Auto document content retrieval"
+            )
+            prompt_embdings = [0.0]
+            prompt_tkns = 0
+            is_auto_mem_rtve = False
+            is_auto_doc_rtve = False
 
         # AUTO RETRIEVE RELEVANT MEMORIES
         mem_list = self.mem.toggle_auto_retrive_memory_entries(
@@ -221,9 +232,10 @@ class Agent:
         msgs.append(llm.user_message(cmbind_prompt))
 
         # === MODEL ANSWER ======================================
-        response, p_tkns, o_tkns = llm.model_response(
-            model=MODEL, msgs=msgs
-        )
+        response = llm.model_response(model=MODEL, msgs=msgs)
+        if not response:
+            return
+        ans, p_tkns, o_tkns = response
 
         # Calculate total tokens
         total_p_tkns = prompt_tkns + p_tkns
@@ -232,7 +244,7 @@ class Agent:
         # === SAVE MESSAGES =====================================
         self.chat_logs.add_conv_turn(
             prompt=prompt,
-            response=response,
+            response=ans,
             state="external",
             attchmnts=paths,
             p_tkns=total_p_tkns,

@@ -49,9 +49,22 @@ class DoclingParsers:
     # DEFAULT DOCLING CONVERTER
     # =======================================================
 
-    def _docling_convert_to_md(self, path: Path) -> tuple[str, str]:
+    def _docling_convert_to_md(self, path: Path) -> tuple[str, str] | None:
         """Convert any file to markdown via docling."""
+        app_log.debug(
+            "Docling converting %s file '%s' to MD format", path.suffix.lstrip(".").upper(), path
+        )
         result = self.converter.convert(path)
+
+        if not result:
+            app_log.warning(
+                "Docling failed to convert %s file '%s' to MD format",
+                path.suffix.lstrip(".").upper,
+                path
+            )
+            return
+
+        app_log.info("%s file '%s' converted to MD format", path.suffix.lstrip(".").upper(), path)
         return result.document.export_to_markdown(), "md"
 
 
@@ -59,21 +72,15 @@ class DoclingParsers:
     # LIBREOFFICE
     # =======================================================
 
-    def _read_odt(self, path: Path) -> tuple[str, str]:
-        app_log.info(f"Docling converting ODT: {path}")
-        print(f"Docling converting content: {path}")
+    def _read_odt(self, path: Path) -> tuple[str, str] | None:
         return self._docling_convert_to_md(path)
 
 
-    def _read_ods(self, path: Path) -> tuple[str, str]:
-        app_log.info(f"Docling converting ODS: {path}")
-        print(f"Docling converting content: {path}")
+    def _read_ods(self, path: Path) -> tuple[str, str] | None:
         return self._docling_convert_to_md(path)
 
 
-    def _read_odp(self, path: Path) -> tuple[str, str]:
-        app_log.info(f"Docling converting ODP: {path}")
-        print(f"Docling converting content: {path}")
+    def _read_odp(self, path: Path) -> tuple[str, str] | None:
         return self._docling_convert_to_md(path)
 
 
@@ -81,21 +88,15 @@ class DoclingParsers:
     # MICROSOFT OFFICE
     # =======================================================
 
-    def _read_docx(self, path: Path) -> tuple[str, str]:
-        app_log.info(f"Docling converting DOCX: {path}")
-        print(f"Docling converting content: {path}")
+    def _read_docx(self, path: Path) -> tuple[str, str] | None:
         return self._docling_convert_to_md(path)
 
 
-    def _read_xlsx(self, path: Path) -> tuple[str, str]:
-        app_log.info(f"Docling converting XLSX: {path}")
-        print(f"Docling converting content: {path}")
+    def _read_xlsx(self, path: Path) -> tuple[str, str] | None:
         return self._docling_convert_to_md(path)
 
 
-    def _read_pptx(self, path: Path) -> tuple[str, str]:
-        app_log.info(f"Docling converting PPTX: {path}")
-        print(f"Docling converting content: {path}")
+    def _read_pptx(self, path: Path) -> tuple[str, str] | None:
         return self._docling_convert_to_md(path)
 
 
@@ -103,16 +104,11 @@ class DoclingParsers:
     # DATA & CONFIGURATION FORMATS
     # =======================================================
 
-    def _read_csv(self, path: Path) -> tuple[str, str]:
-        """Reads csv as plain text files."""
-        app_log.info(f"Docling converting CSV: {path}")
-        print(f"Docling converting content: {path}")
+    def _read_csv(self, path: Path) -> tuple[str, str] | None:
         return self._docling_convert_to_md(path)
 
 
-    def _read_xml(self, path: Path) -> tuple[str, str]:
-        app_log.info(f"Docling converting XML: {path}")
-        print(f"Docling converting content: {path}")
+    def _read_xml(self, path: Path) -> tuple[str, str] | None:
         return self._docling_convert_to_md(path)
 
 
@@ -120,13 +116,9 @@ class DoclingParsers:
     # TEXT DOCUMENTS
     # =======================================================
 
-    def _read_pdf(self, path: Path) -> tuple[str, str]:
-        app_log.info(f"Docling converting PDF: {path}")
-        print(f"Docling converting content: {path}")
+    def _read_pdf(self, path: Path) -> tuple[str, str] | None:
         return self._docling_convert_to_md(path)
 
 
-    def _read_epub(self, path: Path) -> tuple[str, str]:
-        app_log.info(f"Docling converting EPUB: {path}")
-        print(f"Docling converting content: {path}")
+    def _read_epub(self, path: Path) -> tuple[str, str] | None:
         return self._docling_convert_to_md(path)

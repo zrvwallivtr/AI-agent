@@ -13,3 +13,4 @@ dotenv>=0.9.9
 tokenizers>=0.22.2
 langchain-text-splitters>=1.1.2
 feedparser>=6.0.14
+rich-argparse>=1.8.0

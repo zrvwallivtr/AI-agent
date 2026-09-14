@@ -41,7 +41,7 @@ class DocumentReader:
         return resolved
 
 
-    def read_document(self, path: Path) -> tuple[str, str]:
+    def read_document(self, path: Path) -> tuple[str, str] | None:
         """Return file content as a string using mapped parsers and converted file format."""
         safe_path = self._validate_path(path)
 
@@ -58,21 +58,28 @@ class DocumentReader:
             try:
                 app_log.info("Running Docling parser for '%s'", path)
                 parser = self.docling_prsrs.formats.get(ext, self.bs_prsrs.read_txt)
-                cont, format = parser(safe_path)
+                out = parser(safe_path)
+                if not out:
+                    return
+                cont, format = out
                 return cont, format
 
             # Fallback: Basic
             except Exception as e:
-                app_log.warning("Failed to run Docling for '%s': %s. Falling back to basic parser", path, e)
+                app_log.warning(
+                    "Failed to run Docling for '%s': %s. Falling back to basic parser", path, e
+                )
                 try:
                     parser = self.bs_prsrs.formats.get(ext, self.bs_prsrs.read_txt)
                     return parser(safe_path), "txt"
 
                 except Exception as fallback_err:
-                    app_log.warning("Both parser methods failed for '%s': %s. Skipping", path, fallback_err)
-                    return f"Error reading document: {fallback_err}", "Error"
+                    app_log.warning(
+                        "Both parser methods failed for '%s': %s. Skipping", path, fallback_err
+                    )
+                    return
 
-        # === Primary: Basic -> Fallback: Docling =========================================
+        # === PRIMARY: BASIC -> FALLBACK: DOCLING =========================================
         try:
             app_log.info("Running basic parser for '%s'", path)
             parser = self.bs_prsrs.formats.get(ext, self.bs_prsrs.read_txt)
@@ -81,14 +88,21 @@ class DocumentReader:
         except Exception as e:
             if not ENABLE_DOCLING:
                 app_log.warning("Failed to run basic parser for '%s': Skipping", path)
-                return f"Error reading document: {e}", "Error"
+                return
 
-            app_log.warning("Failed to run basic parser for '%s': %s. Falling back to Docling parser", path, e)
+            app_log.warning(
+                "Failed to run basic parser for '%s': %s. Falling back to Docling parser", path, e
+            )
             try:
                 parser = self.docling_prsrs.formats.get(ext, self.bs_prsrs.read_txt)
-                cont, format = parser(safe_path)
+                out = parser(safe_path)
+                if not out:
+                    return
+                cont, format = out
                 return cont, format
 
             except Exception as fallback_err:
-                warn = app_log.warning("Failed to run Docling parser for '%s': %s. Skipping", path, fallback_err)
-                return f"Error reading document: {fallback_err}", "Error"
+                app_log.warning(
+                    "Failed to run Docling parser for '%s': %s. Skipping", path, fallback_err
+                )
+                return

@@ -1,3 +1,3 @@
-from src.cli.flags import main
+from src.cli import argparse
 
-__all__ = ["main"]
+__all__ = ["argparse"]
