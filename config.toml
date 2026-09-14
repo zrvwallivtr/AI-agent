@@ -19,7 +19,6 @@ fallback_tokenizer  = "gpt2"
 
 chat            = "system"
 # memory          = "memory"
-# project_manager = "project_manager"
 
 
 [memory]

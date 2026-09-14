@@ -1,0 +1,146 @@
+services:
+  # ============================================
+  # OLLAMA
+  # ============================================
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    networks:
+      - internal
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: no
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # ============================================
+  # POSTGRES
+  # ============================================
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: pgcontainer
+    restart: no
+    environment:
+      POSTGRES_USER: ${PGDB_USER:-pguser}
+      POSTGRES_PASSWORD: ${PGDB_PASSWORD}
+      POSTGRES_DB: ${PGDB_DBNAME:-pgdb}
+    ports:
+      - "127.0.0.1:5432:5432" # Localhost only
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal # Isolated network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGDB_USER:-pguser} -d ${PGDB_DBNAME:-pgdb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # PGADMIN
+  # ============================================
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    restart: no
+    # profiles: ["admin"] # Opt-in via 'docker compose --profile admin up'
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    ports:
+      - "127.0.0.1:5050:80" # Localhost only
+    networks:
+      - internal
+    depends_on:
+      - postgres
+
+  # ============================================
+  # REDIS (SEARXNG CACHE)
+  # ============================================
+  redis:
+    container_name: searxng-redis
+    image: redis:7-alpine
+    restart: no
+    networks:
+      - crawler_net
+    command: redis-server --save "" --appendonly no # In-memory cache only, no persistence needed
+    mem_limit: 256m
+    cpus: 0.25
+
+  # ============================================
+  # SEARXNG
+  # ============================================
+  searxng:
+    container_name: searxng
+    image: searxng/searxng:latest
+    restart: no
+    networks:
+      - crawler_net
+    ports:
+      - "127.0.0.1:8080:8080"
+    dns:
+      - 1.1.1.1
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+      - SEARXNG_REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis # Ensure redis starts first
+    volumes:
+      - ./searxng:/etc/searxng
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 0.5
+
+  # ============================================
+  # CRAWL4AI
+  # ============================================
+  
+  crawl4ai:
+    container_name: crawl4ai
+    image: ${IMAGE:-unclecode/crawl4ai:${TAG:-latest}}
+    restart: no
+    environment:
+      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN}
+    networks:
+      - crawler_net
+    ports:
+      - "127.0.0.1:11235:11235"
+    dns:
+      - 1.1.1.1
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=unconfined
+    mem_limit: 2g
+    cpus: 1.5
+    shm_size: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11235/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  internal:
+    driver: bridge
+  crawler_net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1350
+
+volumes:
+  ollama_models:
+  pgdata:
