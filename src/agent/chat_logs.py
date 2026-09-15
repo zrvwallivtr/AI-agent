@@ -89,7 +89,7 @@ class ChatLogs:
 
 
     # =============================================================
-    # SESSION ID
+    # MANAGE SESSIONS
     # =============================================================
 
     def get_sess_id(self) -> str | None:
@@ -117,6 +117,31 @@ class ChatLogs:
         app_log.debug("Retrieved session id '%s' for session '%s'", sess_id, self.sess_name)
         return sess_id
 
+
+    def get_sess_name(self, sess_id: str) -> str | None:
+        """Fetch session name from with the given session id chat_session table."""
+        app_log.debug("Fetching session name from session_id '%s'", sess_id)
+        self.cur.execute(
+            """
+            SELECT session_name
+            FROM chat_sessions
+            WHERE session_id = %s;
+            """,
+            (sess_id,)
+        )
+        self.conn.commit()
+        row = self.cur.fetchone()
+
+        if not row:
+            app_log.warning(
+                "Session name for session id '%s' not found: Database miss-match",
+                sess_id
+            )
+            return
+
+        sess_name = str(row[0])
+        app_log.debug("Retrieved session name '%s' from session id '%s'", sess_name, sess_id)
+        return sess_name
 
 
     def get_all_existing_sess_metadata(self) -> dict | None:
@@ -294,13 +319,17 @@ class ChatLogs:
         return sys_prompt + convs
 
 
-    def get_chat_history(self, filter: Literal["compressed", "not_compressed", "all"]) -> list[dict] | None:
+    def get_chat_history(
+        self, filter: Literal["compressed", "not_compressed", "all"]
+    ) -> list[dict] | None:
         """
         Get all messages in a session with filter options.
         If session does not exists, return system prompt.
         """
         app_log.debug(
-            "Fetching all conversation turns for session '%s' with the filter: %s", self.sess_name, filter
+            "Fetching all conversation turns for session '%s' with the filter: %s",
+            self.sess_name,
+            filter
         )
 
         if filter == "compressed":
@@ -429,6 +458,43 @@ class ChatLogs:
             self.sess_name
         )
         return convs
+
+
+    def latest_modified_chat_session(self) ->  tuple[str, str] | None:
+        """
+        Get the chat 'session_name' and 'created_time' that has
+        the latest 'created_time' of the chat logs.
+        """
+        self.cur.execute(
+            """
+            SELECT session_id, created_at
+            FROM chat_logs
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        )
+        self.conn.commit()
+        rows = self.cur.fetchone()
+
+        if not rows:
+            app_log.debug(
+                "No conversation stored in the database"
+            )
+            return
+
+        sess_id = str(rows[0])
+        created_at = str(rows[1])
+        app_log.debug(
+            "Retrieved session id '%s' that contains the latest conversation turn across the database: Latest entry at = %s",
+            sess_id,
+            created_at
+        )
+
+        sess_name = self.get_sess_name(sess_id=sess_id)
+        if not sess_name:
+            return
+
+        return sess_name, created_at
 
 
     # =============================================================

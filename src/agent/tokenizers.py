@@ -1,5 +1,6 @@
 from pathlib import Path
 from tokenizers import Tokenizer
+from datetime import datetime
 
 from src.config import models
 from src.config import files_and_directories as fls_n_dir
@@ -122,6 +123,22 @@ def install_tokenizers():
                 hf_repo,
                 e
             )
+
+
+# =============================================================
+# INSTALLED TOKENIZERS
+# =============================================================
+
+def fetch_all_installed_tokenizers() -> list[dict]:
+    """Return the name and modified time of all installed tokenizers in the tokenizer directory."""
+    return [
+        {
+            "name": file.stem,
+            "modified_at": datetime.fromtimestamp(file.stat().st_mtime),
+        }
+        for file in TOKENIZERS_DIR.iterdir()
+        if file.is_file()
+    ]
 
 
 # =============================================================
