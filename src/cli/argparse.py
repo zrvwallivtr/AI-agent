@@ -155,5 +155,6 @@ def build_parser() -> None:
 
     # === NO ARGUMENTS AND QUESTION ===================================
     if not args.prompt and not any([args.attachments]):
-        parser.print_help()
+        from src.tui.app import StartTUI
+        StartTUI().run()
         return

@@ -1,4 +1,5 @@
 import ollama
+from typing import Callable
 
 from src.agent.models.ollama import ollama_clt
 from src.logger import app_logger, prompt_logger
@@ -31,7 +32,11 @@ def user_message(content: str) -> dict:
 # General model response (streamed onto the terminal)
 # =====================================================================
 
-def model_response(model: str, msgs: list[dict]) -> tuple[str, int, int] | None:
+def model_response(
+    model: str,
+    msgs: list[dict],
+    callback: Callable[[str], None] | None = None
+) -> tuple[str, int, int] | None:
     """Response using specified model, streams output."""
     response = ""
     p_tkns   = 0
@@ -47,13 +52,18 @@ def model_response(model: str, msgs: list[dict]) -> tuple[str, int, int] | None:
     for chnk in stream:
         tkn = chnk.message.content
         response += tkn
-        print(tkn, end="", flush=True)
+
+        if callback:
+            callback(tkn)
+        else:
+            print(tkn, end="", flush=True)
 
         if chnk.done:
             p_tkns = chnk.prompt_eval_count or 0
             o_tkns = chnk.eval_count or 0
 
-    print()
+    if not callback:
+        print()
 
     if not response:
         app_log.warning("Model failed to generate response from the provided messages")

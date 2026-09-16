@@ -16,8 +16,8 @@ src/agent/models/embed.py
 src/agent/models/llm.py
 src/agent/models/ollama.py
 src/cli/__init__.py
+src/cli/argparse.py
 src/cli/flag_functions.py
-src/cli/flags.py
 src/cli/interface.py
 src/config/documents.py
 src/config/files_and_directories.py
@@ -47,6 +47,5 @@ src/rag/web_search/web_scraping/technical/arxiv.py
 src/rag/web_search/web_scraping/technical/esa_publications.py
 src/rag/web_search/web_scraping/technical/nasa_ntrs.py
 src/rag/web_search/web_scraping/technical/semantic_scholar.py
-src/tools/project_manager.py
 tests/test_error_message.py
 tests/test_setup.py

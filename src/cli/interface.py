@@ -63,7 +63,7 @@ def dashboard(
     sess_dict: dict | None,
     latest_sess: str | None,
     latest_sess_dt: str | None,
-) -> None:
+):
     """
     Dashboard for the agent includes:
     - App icon

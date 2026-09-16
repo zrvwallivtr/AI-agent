@@ -1,5 +1,6 @@
 import socket
 from pathlib import Path
+from typing import Callable
 
 from src.config.postgres import conn
 from src.config import models
@@ -73,25 +74,23 @@ class Agent:
     def __init__(
         self,
         sess_name: str | None = None,
-        project: str | None = None
     ):
         self.tknizr = Tknizr(MODEL)
 
         self.sess_name  = sess_name
-        self.project    = project
 
         self.conn       = conn
         self.chat_logs = ChatLogs(
             conn=self.conn, sess_name=self.sess_name
         )
         self.mem = Memory(
-            conn=self.conn, chat_logs=self.chat_logs, project=project
+            conn=self.conn, chat_logs=self.chat_logs
         )
         self.kw_bs = KnowledgeBase(
             conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
         )
         self.slash_cmd = slash_cmds.SlashCmds(
-            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name, project=project
+            conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
         )
         self.doc_kw_bs = DocumentKnowledgeBase(
             conn=self.conn, chat_logs=self.chat_logs, sess_name=self.sess_name
@@ -139,6 +138,7 @@ class Agent:
         is_auto_doc_rtve: bool = True,
         is_auto_web_sear: bool = False,
         is_attchmnt: bool = False,
+        callback: Callable[[str], None] | None = None,
         paths: list[Path] | None = None
     ) -> None | str:
         """
@@ -236,7 +236,7 @@ class Agent:
         msgs.append(llm.user_message(cmbind_prompt))
 
         # === MODEL ANSWER ======================================
-        response = llm.model_response(model=MODEL, msgs=msgs)
+        response = llm.model_response(model=MODEL, msgs=msgs, callback=callback)
         if not response:
             return
         ans, p_tkns, o_tkns = response
@@ -265,5 +265,5 @@ class Agent:
         # === STORE ATTACHMENT(S) ===============================
         if attchmnt_dict:
             self.doc_kw_bs.store_attachments(attchmnt_dict)
-        return
+        return ans
         # // END HERE //

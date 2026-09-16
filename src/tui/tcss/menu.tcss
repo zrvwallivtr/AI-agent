@@ -1,0 +1,24 @@
+Screen {
+    layout: vertical;
+    padding: 1 2;
+}
+
+#top_container {
+    layout: horizontal;
+    height: 11;
+}
+
+#icon {
+    width: 28;
+    height: 100%;
+}
+
+#description {
+    width: 1fr;
+    height: 100%;
+}
+
+#status {
+    width: 100%;
+    height: 1fr;
+}
